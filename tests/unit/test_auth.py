@@ -239,3 +239,59 @@ async def test_get_access_token_refreshes_when_within_60s_of_expiry(tmp_tokens_p
 
     result = await get_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
     assert result == "fresh-acc"
+
+
+import asyncio
+
+
+@respx.mock
+async def test_concurrent_get_access_token_refreshes_only_once(tmp_tokens_path):
+    """Two coroutines calling get_access_token while expiring should result
+    in exactly ONE refresh request — the second waits on the lock, then sees
+    the freshly-refreshed token and returns it without calling the endpoint.
+    """
+    TokenStore(tmp_tokens_path).save(
+        access_token="stale",
+        refresh_token="ref-1",
+        expires_in=10,  # under leeway, will trigger refresh
+        scope="x",
+    )
+    route = respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "fresh",
+                "refresh_token": "ref-2",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            },
+        )
+    )
+
+    results = await asyncio.gather(
+        get_access_token(keystring="kkey", tokens_path=tmp_tokens_path),
+        get_access_token(keystring="kkey", tokens_path=tmp_tokens_path),
+        get_access_token(keystring="kkey", tokens_path=tmp_tokens_path),
+    )
+
+    # All three coroutines see the new token
+    assert results == ["fresh", "fresh", "fresh"]
+    # But only ONE refresh actually went over the wire
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_refresh_network_error_raises_network_error(tmp_tokens_path):
+    """Connection-level failure → NetworkError, not raw httpx.TransportError."""
+    from etsy_mcp.errors import NetworkError as NE
+
+    TokenStore(tmp_tokens_path).save(
+        access_token="acc",
+        refresh_token="ref",
+        expires_in=10,
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(side_effect=httpx.ConnectError("dns down"))
+
+    with pytest.raises(NE):
+        await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)

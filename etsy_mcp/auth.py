@@ -10,6 +10,7 @@ and TokenStore.save() to seed .tokens.json the first time.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -21,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from .errors import AuthInvalid, RefreshTokenExpired
+from .errors import AuthInvalid, NetworkError, RefreshTokenExpired
 
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -88,6 +89,7 @@ class TokenStore:
 
 ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token"
 REFRESH_LEEWAY_SECONDS = 60
+_refresh_lock = asyncio.Lock()
 
 
 async def refresh_access_token(
@@ -99,7 +101,8 @@ async def refresh_access_token(
 
     Raises:
         RefreshTokenExpired: refresh token expired (90 days) or revoked.
-        AuthInvalid: keystring invalid.
+        AuthInvalid: keystring/secret invalid or rejected by Etsy.
+        NetworkError: connection-level failure reaching Etsy.
     """
     store = TokenStore(tokens_path)
     current = store.load()
@@ -110,8 +113,11 @@ async def refresh_access_token(
         "refresh_token": current["refresh_token"],
     }
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(ETSY_TOKEN_URL, data=payload)
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(ETSY_TOKEN_URL, data=payload)
+    except httpx.TransportError as exc:
+        raise NetworkError(f"Network error contacting Etsy token endpoint: {exc}") from exc
 
     if resp.status_code == 400:
         body = _safe_json(resp)
@@ -146,11 +152,18 @@ async def get_access_token(
     keystring: str,
     tokens_path: str | Path,
 ) -> str:
-    """Return a valid access token, refreshing if it expires within the leeway window."""
-    current = TokenStore(tokens_path).load()
-    if current["expires_at"] - time.time() > REFRESH_LEEWAY_SECONDS:
-        return current["access_token"]
-    return await refresh_access_token(keystring=keystring, tokens_path=tokens_path)
+    """Return a valid access token, refreshing if it expires within the leeway window.
+
+    Concurrent callers serialize on a process-wide lock so we never hit the
+    race where two coroutines refresh in parallel — the second would send the
+    just-rotated (now-invalid) refresh token and get a misleading
+    invalid_grant from Etsy.
+    """
+    async with _refresh_lock:
+        current = TokenStore(tokens_path).load()
+        if current["expires_at"] - time.time() > REFRESH_LEEWAY_SECONDS:
+            return current["access_token"]
+        return await refresh_access_token(keystring=keystring, tokens_path=tokens_path)
 
 
 def _safe_json(resp: httpx.Response) -> dict[str, Any]:
