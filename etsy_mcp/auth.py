@@ -19,6 +19,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+from .errors import AuthInvalid, RefreshTokenExpired
+
 
 def generate_pkce_pair() -> tuple[str, str]:
     """Return (code_verifier, code_challenge) per RFC 7636 with S256.
@@ -80,3 +84,77 @@ class TokenStore:
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
+
+
+ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token"
+REFRESH_LEEWAY_SECONDS = 60
+
+
+async def refresh_access_token(
+    *,
+    keystring: str,
+    tokens_path: str | Path,
+) -> str:
+    """Hit Etsy's refresh endpoint, persist new tokens (rotation included), return access_token.
+
+    Raises:
+        RefreshTokenExpired: refresh token expired (90 days) or revoked.
+        AuthInvalid: keystring invalid.
+    """
+    store = TokenStore(tokens_path)
+    current = store.load()
+
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": keystring,
+        "refresh_token": current["refresh_token"],
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(ETSY_TOKEN_URL, data=payload)
+
+    if resp.status_code == 400:
+        body = _safe_json(resp)
+        if body.get("error") == "invalid_grant":
+            raise RefreshTokenExpired(
+                "Refresh token expired or revoked. Re-run scripts/bootstrap_oauth.py.",
+                details=body,
+            )
+        raise AuthInvalid(
+            f"Token refresh failed (400): {body.get('error_description', 'no description')}",
+            details=body,
+        )
+    if resp.status_code in (401, 403):
+        raise AuthInvalid(
+            f"Token refresh rejected ({resp.status_code}). Check ETSY_KEYSTRING.",
+            details=_safe_json(resp),
+        )
+    resp.raise_for_status()
+
+    body = resp.json()
+    store.save(
+        access_token=body["access_token"],
+        refresh_token=body["refresh_token"],
+        expires_in=body["expires_in"],
+        scope=body.get("scope", current.get("scope", "")),
+    )
+    return body["access_token"]
+
+
+async def get_access_token(
+    *,
+    keystring: str,
+    tokens_path: str | Path,
+) -> str:
+    """Return a valid access token, refreshing if it expires within the leeway window."""
+    current = TokenStore(tokens_path).load()
+    if current["expires_at"] - time.time() > REFRESH_LEEWAY_SECONDS:
+        return current["access_token"]
+    return await refresh_access_token(keystring=keystring, tokens_path=tokens_path)
+
+
+def _safe_json(resp: httpx.Response) -> dict[str, Any]:
+    try:
+        return resp.json()
+    except Exception:
+        return {"raw": resp.text[:500]}

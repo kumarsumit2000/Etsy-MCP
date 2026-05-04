@@ -122,3 +122,120 @@ def test_save_cleans_tmp_file_when_serialization_fails(tmp_tokens_path, monkeypa
 
     tmp_path = tmp_tokens_path.with_suffix(tmp_tokens_path.suffix + ".tmp")
     assert not tmp_path.exists(), "tmp file should be cleaned up after failure"
+
+
+import respx
+import httpx
+
+from etsy_mcp.auth import (
+    refresh_access_token,
+    get_access_token,
+    ETSY_TOKEN_URL,
+)
+from etsy_mcp.errors import RefreshTokenExpired, AuthInvalid
+
+
+@respx.mock
+async def test_refresh_rotates_refresh_token(tmp_tokens_path):
+    """Etsy returns a NEW refresh token on every refresh — the new one must be persisted."""
+    TokenStore(tmp_tokens_path).save(
+        access_token="old-acc",
+        refresh_token="old-ref",
+        expires_in=10,  # near expiry
+        scope="listings_r",
+    )
+
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "new-acc",
+                "refresh_token": "new-ref",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            },
+        )
+    )
+
+    new_access = await refresh_access_token(
+        keystring="kkey",
+        tokens_path=tmp_tokens_path,
+    )
+
+    assert new_access == "new-acc"
+    persisted = TokenStore(tmp_tokens_path).load()
+    assert persisted["access_token"] == "new-acc"
+    assert persisted["refresh_token"] == "new-ref"  # rotation persisted
+
+
+@respx.mock
+async def test_refresh_invalid_grant_raises_refresh_token_expired(tmp_tokens_path):
+    TokenStore(tmp_tokens_path).save(
+        access_token="acc",
+        refresh_token="ref-dead",
+        expires_in=10,
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            400,
+            json={"error": "invalid_grant", "error_description": "expired"},
+        )
+    )
+
+    with pytest.raises(RefreshTokenExpired):
+        await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+
+
+@respx.mock
+async def test_refresh_invalid_client_raises_auth_invalid(tmp_tokens_path):
+    TokenStore(tmp_tokens_path).save(
+        access_token="acc",
+        refresh_token="ref",
+        expires_in=10,
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            401,
+            json={"error": "invalid_client"},
+        )
+    )
+
+    with pytest.raises(AuthInvalid):
+        await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+
+
+async def test_get_access_token_returns_cached_when_not_expiring(tmp_tokens_path):
+    TokenStore(tmp_tokens_path).save(
+        access_token="cached-acc",
+        refresh_token="ref",
+        expires_in=3600,  # 1 hour out — well above the 60s refresh threshold
+        scope="x",
+    )
+    result = await get_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+    assert result == "cached-acc"
+
+
+@respx.mock
+async def test_get_access_token_refreshes_when_within_60s_of_expiry(tmp_tokens_path):
+    TokenStore(tmp_tokens_path).save(
+        access_token="stale-acc",
+        refresh_token="ref-1",
+        expires_in=30,  # under 60s threshold
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "fresh-acc",
+                "refresh_token": "ref-2",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            },
+        )
+    )
+
+    result = await get_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+    assert result == "fresh-acc"
