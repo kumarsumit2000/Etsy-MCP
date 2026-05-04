@@ -55,7 +55,14 @@ async def etsy_whoami() -> dict[str, Any]:
             keystring=KEYSTRING,
             tokens_path=str(TOKENS_PATH),
         )
+        if not isinstance(me, dict) or "user_id" not in me:
+            return {
+                "error": "Etsy /users/me returned unexpected shape (no user_id).",
+                "code": "unknown",
+                "details": {"response": me},
+            }
         user_id = me["user_id"]
+
         shops_resp = await etsy_request(
             "GET",
             f"/application/users/{user_id}/shops",
@@ -65,11 +72,30 @@ async def etsy_whoami() -> dict[str, Any]:
     except EtsyMCPError as exc:
         return _err_to_dict(exc)
 
-    shop = (
-        shops_resp["results"][0]
-        if isinstance(shops_resp, dict) and "results" in shops_resp
-        else shops_resp
-    )
+    # Etsy may return {"results": [...]} or a bare object — normalize.
+    if isinstance(shops_resp, dict) and "results" in shops_resp:
+        results = shops_resp.get("results") or []
+        if not results:
+            return {
+                "error": "Authenticated user has no shops.",
+                "code": "not_found",
+            }
+        shop = results[0]
+    elif isinstance(shops_resp, dict):
+        shop = shops_resp
+    else:
+        return {
+            "error": "Etsy /shops returned unexpected shape (not a dict).",
+            "code": "unknown",
+            "details": {"response_type": type(shops_resp).__name__},
+        }
+
+    if not isinstance(shop, dict):
+        return {
+            "error": "Etsy /shops returned a non-dict shop entry.",
+            "code": "unknown",
+        }
+
     return {
         "user_id": user_id,
         "login_name": me.get("login_name"),
