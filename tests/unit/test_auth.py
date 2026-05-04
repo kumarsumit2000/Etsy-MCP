@@ -295,3 +295,42 @@ async def test_refresh_network_error_raises_network_error(tmp_tokens_path):
 
     with pytest.raises(NE):
         await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+
+
+@respx.mock
+async def test_refresh_500_raises_network_error(tmp_tokens_path):
+    """5xx from token endpoint must not leak as raw HTTPStatusError."""
+    from etsy_mcp.errors import NetworkError as NE
+
+    TokenStore(tmp_tokens_path).save(
+        access_token="acc",
+        refresh_token="ref",
+        expires_in=10,
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(500, json={"error": "internal"})
+    )
+
+    with pytest.raises(NE):
+        await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)
+
+
+@respx.mock
+async def test_refresh_malformed_200_raises_auth_invalid(tmp_tokens_path):
+    """Etsy 200 with missing access_token must not leak as raw KeyError."""
+    TokenStore(tmp_tokens_path).save(
+        access_token="acc",
+        refresh_token="ref",
+        expires_in=10,
+        scope="x",
+    )
+    respx.post(ETSY_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"refresh_token": "new-ref", "expires_in": 3600},  # access_token missing
+        )
+    )
+
+    with pytest.raises(AuthInvalid):
+        await refresh_access_token(keystring="kkey", tokens_path=tmp_tokens_path)

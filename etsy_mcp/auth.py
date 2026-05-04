@@ -135,16 +135,30 @@ async def refresh_access_token(
             f"Token refresh rejected ({resp.status_code}). Check ETSY_KEYSTRING.",
             details=_safe_json(resp),
         )
-    resp.raise_for_status()
+    if not (200 <= resp.status_code < 300):
+        raise NetworkError(
+            f"Unexpected token endpoint response ({resp.status_code}).",
+            details=_safe_json(resp),
+        )
 
-    body = resp.json()
+    try:
+        body = resp.json()
+        access_token = body["access_token"]
+        refresh_token = body["refresh_token"]
+        expires_in = body["expires_in"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise AuthInvalid(
+            f"Token endpoint returned malformed response: {exc}",
+            details=_safe_json(resp),
+        ) from exc
+
     store.save(
-        access_token=body["access_token"],
-        refresh_token=body["refresh_token"],
-        expires_in=body["expires_in"],
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
         scope=body.get("scope", current.get("scope", "")),
     )
-    return body["access_token"]
+    return access_token
 
 
 async def get_access_token(
