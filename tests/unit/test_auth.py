@@ -88,3 +88,37 @@ def test_save_omits_tmp_file_after_success(tmp_tokens_path):
     )
     tmp_path = tmp_tokens_path.with_suffix(tmp_tokens_path.suffix + ".tmp")
     assert not tmp_path.exists()
+
+
+def test_save_creates_file_with_0o600_perms(tmp_tokens_path):
+    """Tokens file holds an access token; must not be world-readable."""
+    import stat
+    TokenStore(tmp_tokens_path).save(
+        access_token="secret",
+        refresh_token="ref",
+        expires_in=3600,
+        scope="x",
+    )
+    mode = stat.S_IMODE(tmp_tokens_path.stat().st_mode)
+    assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+def test_save_cleans_tmp_file_when_serialization_fails(tmp_tokens_path, monkeypatch):
+    """If json.dump raises, the .tmp file must not be left behind."""
+    import json as json_module
+
+    def boom(*a, **kw):
+        raise ValueError("simulated serialization failure")
+
+    monkeypatch.setattr(json_module, "dump", boom)
+
+    with pytest.raises(ValueError):
+        TokenStore(tmp_tokens_path).save(
+            access_token="acc",
+            refresh_token="ref",
+            expires_in=3600,
+            scope="x",
+        )
+
+    tmp_path = tmp_tokens_path.with_suffix(tmp_tokens_path.suffix + ".tmp")
+    assert not tmp_path.exists(), "tmp file should be cleaned up after failure"

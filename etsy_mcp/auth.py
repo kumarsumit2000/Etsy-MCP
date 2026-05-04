@@ -70,8 +70,13 @@ class TokenStore:
         }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self.path)
+        try:
+            with tmp.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
