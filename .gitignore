@@ -1,0 +1,35 @@
+# Credentials & tokens — NEVER commit
+.env
+.env.local
+.tokens.json
+.tokens.json.tmp
+.storage_state.json
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Playwright
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Exports (generated bulk data dumps)
+exports/
