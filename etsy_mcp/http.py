@@ -5,7 +5,7 @@ All API-driven tools call etsy_request(). The wrapper handles:
 - 401 → automatic token refresh + one retry
 - 429 → honor Retry-After, retry up to 3 times
 - 5xx → exponential backoff, retry up to 3 times
-- network errors → one retry after 1s
+- network errors → retry up to max_retries times with exponential backoff
 - terminal failure → raise the right EtsyMCPError subclass
 """
 
@@ -85,9 +85,10 @@ async def etsy_request(
     """
     url = path if path.startswith("http") else f"{ETSY_API_BASE}{path}"
     refreshed_once = False
+    attempt = 0  # counts retries for 429/5xx/network only
 
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        for attempt in range(max_retries + 1):
+        while True:
             await _LIMITER.acquire()
             access_token = await get_access_token(
                 keystring=keystring, tokens_path=tokens_path
@@ -107,10 +108,13 @@ async def etsy_request(
                     data=data,
                     files=files,
                 )
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+            except httpx.TransportError as exc:
                 if attempt >= max_retries:
-                    raise NetworkError(f"Network error after {attempt} retries: {exc}") from exc
+                    raise NetworkError(
+                        f"Network error after {attempt} retries: {exc}"
+                    ) from exc
                 await asyncio.sleep(backoff_base_seconds * (2 ** attempt))
+                attempt += 1
                 continue
 
             # Success
@@ -119,7 +123,7 @@ async def etsy_request(
                     return {}
                 return resp.json()
 
-            # Auth: refresh once, then give up
+            # Auth: refresh once, then immediately retry (does NOT count against max_retries)
             if resp.status_code == 401:
                 if refreshed_once:
                     raise AuthInvalid(
@@ -127,7 +131,9 @@ async def etsy_request(
                         "Keystring may be invalid or scopes insufficient.",
                         details=_safe_json(resp),
                     )
-                await refresh_access_token(keystring=keystring, tokens_path=tokens_path)
+                await refresh_access_token(
+                    keystring=keystring, tokens_path=tokens_path
+                )
                 refreshed_once = True
                 continue
 
@@ -139,7 +145,11 @@ async def etsy_request(
                         retry_after=_parse_retry_after(resp),
                         details=_safe_json(resp),
                     )
-                await asyncio.sleep(_parse_retry_after(resp) or backoff_base_seconds * (2 ** attempt))
+                await asyncio.sleep(
+                    _parse_retry_after(resp)
+                    or backoff_base_seconds * (2 ** attempt)
+                )
+                attempt += 1
                 continue
 
             # 5xx
@@ -150,6 +160,7 @@ async def etsy_request(
                         details=_safe_json(resp),
                     )
                 await asyncio.sleep(backoff_base_seconds * (2 ** attempt))
+                attempt += 1
                 continue
 
             # 404 / 400 / others — terminal
@@ -158,16 +169,14 @@ async def etsy_request(
                 raise NotFound(f"Etsy API: {path} not found.", details=body)
             if resp.status_code == 400:
                 raise ValidationFailed(
-                    f"Etsy API rejected request: {body.get('error_description') or body.get('error', 'bad request')}",
+                    f"Etsy API rejected request: "
+                    f"{body.get('error_description') or body.get('message') or body.get('error', 'bad request')}",
                     details=body,
                 )
             raise EtsyMCPError(
                 f"Etsy API returned {resp.status_code}: {body}",
                 details=body,
             )
-
-    # Should be unreachable, but defensive.
-    raise EtsyMCPError("etsy_request: retry loop exited unexpectedly")
 
 
 def _parse_retry_after(resp: httpx.Response) -> int:

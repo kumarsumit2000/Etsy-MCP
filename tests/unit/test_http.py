@@ -217,3 +217,69 @@ async def test_request_network_error_retried_once(tmp_tokens_path):
     )
     assert result == {"user_id": 3}
     assert route.call_count == 2
+
+
+@respx.mock
+async def test_request_401_on_final_attempt_still_refreshes_and_succeeds(tmp_tokens_path):
+    """Critical bug: 401 on the final loop iteration must still refresh + retry,
+    not fall through to the unreachable sentinel.
+
+    Scenario: max_retries=2, two 429s consume the retry budget, the final
+    attempt hits 401 with a stale token. After refresh, the retry must succeed.
+    """
+    _seed_tokens(tmp_tokens_path, expires_in=3600)
+
+    api_route = respx.get(f"{ETSY_API_BASE}/application/users/me").mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "0"}),
+            httpx.Response(429, headers={"Retry-After": "0"}),
+            httpx.Response(401, json={"error": "expired"}),
+            httpx.Response(200, json={"user_id": 99}),
+        ]
+    )
+    refresh_route = respx.post("https://api.etsy.com/v3/public/oauth/token").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "fresh",
+                "refresh_token": "ref-new",
+                "expires_in": 3600,
+            },
+        )
+    )
+
+    result = await etsy_request(
+        "GET",
+        "/application/users/me",
+        keystring="kkey",
+        tokens_path=tmp_tokens_path,
+        max_retries=2,
+        backoff_base_seconds=0.0,
+    )
+
+    assert result == {"user_id": 99}
+    assert refresh_route.call_count == 1
+    assert api_route.call_count == 4  # 429, 429, 401, 200
+
+
+@respx.mock
+async def test_request_connect_timeout_is_retried(tmp_tokens_path):
+    """httpx.ConnectTimeout is a subclass of TransportError but NOT ConnectError.
+    Make sure it's caught and retried, not surfaced raw.
+    """
+    _seed_tokens(tmp_tokens_path)
+    route = respx.get(f"{ETSY_API_BASE}/application/users/me").mock(
+        side_effect=[
+            httpx.ConnectTimeout("syn dropped"),
+            httpx.Response(200, json={"user_id": 5}),
+        ]
+    )
+    result = await etsy_request(
+        "GET",
+        "/application/users/me",
+        keystring="kkey",
+        tokens_path=tmp_tokens_path,
+        backoff_base_seconds=0.0,
+    )
+    assert result == {"user_id": 5}
+    assert route.call_count == 2
