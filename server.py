@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP
 from etsy_mcp.auth import TokenStore
 from etsy_mcp.errors import EtsyMCPError
 from etsy_mcp.http import etsy_request
+from etsy_mcp.browser import register_browser_tools
 from etsy_mcp.exports import register_export_tools
 from etsy_mcp.listings import register_listing_tools
 from etsy_mcp.receipts import register_receipt_tools
@@ -77,6 +78,12 @@ register_taxonomy_tools(
     tokens_path=TOKENS_PATH,
 )
 register_export_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
+register_browser_tools(
     mcp,
     keystring=KEYSTRING,
     tokens_path=TOKENS_PATH,
