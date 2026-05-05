@@ -90,3 +90,61 @@ async def test_export_all_listings_missing_shop_id(make_tools, tmp_path):
     tools = make_tools(register_export_tools, shop_id="")
     result = await tools["etsy_export_all_listings"](output_dir=str(tmp_path))
     assert result["code"] == "auth_invalid"
+
+
+@respx.mock
+async def test_export_all_receipts_with_since(make_tools, tmp_path):
+    tools = make_tools(register_export_tools, shop_id="42")
+    route = respx.get(f"{ETSY_API_BASE}/application/shops/42/receipts").mock(
+        return_value=httpx.Response(
+            200,
+            json={"count": 1, "results": [{"receipt_id": 1, "status": "Paid"}]},
+        )
+    )
+
+    result = await tools["etsy_export_all_receipts"](
+        output_dir=str(tmp_path),
+        format="json",
+        since="2026-01-01",
+    )
+
+    assert result["receipts_count"] == 1
+    # since converted to unix timestamp (2026-01-01 UTC = 1767225600)
+    assert route.calls.last.request.url.params["min_created"] == "1767225600"
+    assert (tmp_path / "receipts.json").exists()
+
+
+@respx.mock
+async def test_export_all_receipts_invalid_since_format(make_tools, tmp_path):
+    tools = make_tools(register_export_tools, shop_id="42")
+    result = await tools["etsy_export_all_receipts"](
+        output_dir=str(tmp_path),
+        since="not-a-date",
+    )
+    assert result["code"] == "validation_failed"
+    assert "since" in result["error"].lower()
+
+
+@respx.mock
+async def test_export_all_reviews_writes_csv(make_tools, tmp_path):
+    tools = make_tools(register_export_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/shops/42/reviews").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 2,
+                "results": [
+                    {"review_id": 1, "rating": 5, "review": "Great"},
+                    {"review_id": 2, "rating": 4, "review": "Good"},
+                ],
+            },
+        )
+    )
+
+    result = await tools["etsy_export_all_reviews"](
+        output_dir=str(tmp_path),
+        format="csv",
+    )
+
+    assert result["reviews_count"] == 2
+    assert (tmp_path / "reviews.csv").exists()

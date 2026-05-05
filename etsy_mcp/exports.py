@@ -124,4 +124,87 @@ def register_export_tools(
         files = _write_outputs(rows, Path(output_dir), "listings", format)
         return {"listings_count": len(rows), "files": files}
 
-    return {"etsy_export_all_listings": etsy_export_all_listings}
+    @mcp.tool()
+    async def etsy_export_all_receipts(
+        output_dir: str,
+        format: str = "both",
+        since: str | None = None,
+    ) -> dict[str, Any]:
+        """Paginate every receipt in your shop (optionally since an ISO date)
+        and write to JSON and/or CSV.
+
+        Args:
+            output_dir: Directory to write output files into.
+            format: 'json', 'csv', or 'both'. Default 'both'.
+            since: ISO date string (YYYY-MM-DD) — only receipts created on or
+                after this date. Converted to unix timestamp for Etsy's
+                min_created filter.
+        """
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+        if format not in ("json", "csv", "both"):
+            return {"error": f"Invalid format '{format}'. Use json, csv, or both.", "code": "validation_failed"}
+
+        params: dict[str, Any] = {}
+        if since is not None:
+            from datetime import datetime, timezone
+            try:
+                dt = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                return {
+                    "error": f"Invalid since='{since}'. Use ISO date format YYYY-MM-DD.",
+                    "code": "validation_failed",
+                }
+            params["min_created"] = int(dt.timestamp())
+
+        try:
+            rows = await paginate_all(
+                "GET",
+                f"/application/shops/{shop_id}/receipts",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                params=params,
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        files = _write_outputs(rows, Path(output_dir), "receipts", format)
+        return {"receipts_count": len(rows), "files": files}
+
+    @mcp.tool()
+    async def etsy_export_all_reviews(
+        output_dir: str,
+        format: str = "both",
+    ) -> dict[str, Any]:
+        """Paginate every review in your shop and write to JSON and/or CSV.
+
+        Args:
+            output_dir: Directory to write output files into.
+            format: 'json', 'csv', or 'both'. Default 'both'.
+        """
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+        if format not in ("json", "csv", "both"):
+            return {"error": f"Invalid format '{format}'. Use json, csv, or both.", "code": "validation_failed"}
+
+        try:
+            rows = await paginate_all(
+                "GET",
+                f"/application/shops/{shop_id}/reviews",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                params={},
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        files = _write_outputs(rows, Path(output_dir), "reviews", format)
+        return {"reviews_count": len(rows), "files": files}
+
+    return {
+        "etsy_export_all_listings": etsy_export_all_listings,
+        "etsy_export_all_receipts": etsy_export_all_receipts,
+        "etsy_export_all_reviews": etsy_export_all_reviews,
+    }
