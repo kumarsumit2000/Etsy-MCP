@@ -291,3 +291,180 @@ async def test_create_draft_listing_missing_shop_id(make_tools):
         is_supply=False, shipping_profile_id=1,
     )
     assert result["code"] == "auth_invalid"
+
+
+@respx.mock
+async def test_update_listing_sends_only_provided_fields(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.patch(f"{ETSY_API_BASE}/application/shops/42/listings/777").mock(
+        return_value=httpx.Response(200, json={"listing_id": 777, "title": "New title"})
+    )
+
+    result = await tools["etsy_update_listing"](
+        listing_id=777,
+        title="New title",
+        price_usd=29.99,
+    )
+
+    body = dict(httpx.QueryParams(route.calls.last.request.content.decode()))
+    assert body["title"] == "New title"
+    assert body["price"] == "29.99"
+    # Fields not passed must NOT appear
+    assert "description" not in body
+    assert "quantity" not in body
+    assert result["title"] == "New title"
+
+
+@respx.mock
+async def test_update_listing_with_array_fields(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.patch(f"{ETSY_API_BASE}/application/shops/42/listings/777").mock(
+        return_value=httpx.Response(200, json={"listing_id": 777})
+    )
+
+    await tools["etsy_update_listing"](
+        listing_id=777,
+        tags=["tag1", "tag2"],
+        materials=["wool"],
+    )
+
+    body = route.calls.last.request.content.decode()
+    assert body.count("tags=") == 2
+    assert body.count("materials=") == 1
+
+
+async def test_update_listing_missing_shop_id(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="")
+    result = await tools["etsy_update_listing"](listing_id=777, title="X")
+    assert result["code"] == "auth_invalid"
+
+
+@respx.mock
+async def test_delete_listing_without_confirm_refuses(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    # No respx mock — must not hit the network.
+
+    result = await tools["etsy_delete_listing"](listing_id=777)
+
+    assert result["code"] == "validation_failed"
+    assert "confirm" in result["error"].lower()
+
+
+@respx.mock
+async def test_delete_listing_with_confirm_calls_api(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.delete(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(204)
+    )
+
+    result = await tools["etsy_delete_listing"](listing_id=777, confirm=True)
+
+    assert route.called
+    assert result == {"deleted": True, "listing_id": 777}
+
+
+@respx.mock
+async def test_delete_listing_404_returns_structured_error(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.delete(f"{ETSY_API_BASE}/application/listings/999").mock(
+        return_value=httpx.Response(404, json={"error": "Listing not found"})
+    )
+
+    result = await tools["etsy_delete_listing"](listing_id=999, confirm=True)
+
+    assert result["code"] == "not_found"
+
+
+@respx.mock
+async def test_upload_listing_image_uploads_file(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    img = tmp_path / "test.jpg"
+    img.write_bytes(b"\xff\xd8\xff\xe0fakejpegdata")
+
+    route = respx.post(
+        f"{ETSY_API_BASE}/application/shops/42/listings/777/images"
+    ).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "listing_image_id": 5555,
+                "rank": 1,
+                "url_fullxfull": "https://i.etsystatic.com/x.jpg",
+            },
+        )
+    )
+
+    result = await tools["etsy_upload_listing_image"](
+        listing_id=777,
+        image_path=str(img),
+        rank=1,
+        alt_text="A test image",
+    )
+
+    assert route.called
+    # Verify it was a multipart request
+    content_type = route.calls.last.request.headers["content-type"]
+    assert content_type.startswith("multipart/form-data")
+    body = route.calls.last.request.content
+    assert b"test.jpg" in body
+    assert b"fakejpegdata" in body
+    # rank + alt_text appear as form fields
+    assert b'name="rank"' in body
+    assert b'name="alt_text"' in body
+    assert result["listing_image_id"] == 5555
+
+
+async def test_upload_listing_image_missing_file(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    result = await tools["etsy_upload_listing_image"](
+        listing_id=777,
+        image_path=str(tmp_path / "does-not-exist.jpg"),
+    )
+    assert result["code"] == "validation_failed"
+    assert "not found" in result["error"].lower() or "no such file" in result["error"].lower()
+
+
+async def test_upload_listing_image_missing_shop_id(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="")
+    img = tmp_path / "x.jpg"
+    img.write_bytes(b"x")
+    result = await tools["etsy_upload_listing_image"](listing_id=1, image_path=str(img))
+    assert result["code"] == "auth_invalid"
+
+
+@respx.mock
+async def test_update_listing_inventory_sends_products_json(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.put(f"{ETSY_API_BASE}/application/listings/777/inventory").mock(
+        return_value=httpx.Response(
+            200,
+            json={"products": [{"sku": "A", "offerings": [{"price": {"amount": 1500, "divisor": 100}, "quantity": 5}]}]},
+        )
+    )
+
+    products = [
+        {
+            "sku": "A",
+            "offerings": [
+                {"price": 15.00, "quantity": 5, "is_enabled": True},
+            ],
+        }
+    ]
+
+    result = await tools["etsy_update_listing_inventory"](
+        listing_id=777,
+        products=products,
+    )
+
+    # Verify it was sent as JSON body
+    import json as _json
+    sent = _json.loads(route.calls.last.request.content)
+    assert sent == {"products": products}
+    assert "products" in result
+
+
+async def test_update_listing_inventory_empty_products_rejected(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    result = await tools["etsy_update_listing_inventory"](listing_id=777, products=[])
+    assert result["code"] == "validation_failed"
+    assert "empty" in result["error"].lower() or "at least one" in result["error"].lower()
