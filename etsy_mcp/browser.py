@@ -190,5 +190,336 @@ def register_browser_tools(
     register_*_tools factories but are unused here — browser tools don't
     hit the Etsy API.
     """
-    # Tools added in later tasks
-    return {}
+
+    @mcp.tool()
+    async def etsy_ads_get_status() -> dict[str, Any]:
+        """Return current Etsy Ads state: enabled, daily budget, last 30d stats.
+
+        Driven via the seller dashboard at /your/shops/me/advertising since
+        Etsy's public API doesn't expose ad campaign data.
+        """
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_ADS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                # Detect on/off via the presence of the "Turn on Etsy Ads" button
+                turn_on = page.locator(SELECTORS["ads_turn_on_button_role"])
+                pause = page.locator(SELECTORS["ads_pause_button_role"])
+                if await turn_on.count() > 0:
+                    enabled = False
+                elif await pause.count() > 0:
+                    enabled = True
+                else:
+                    screenshot = await _save_error_screenshot(page, "ads_status_detect")
+                    return _selector_missing_error("detect ads on/off", screenshot)
+
+                # Daily budget — only meaningful when enabled
+                daily_budget_usd: float | None = None
+                if enabled:
+                    budget_input = page.locator(SELECTORS["ads_daily_budget_input_label"])
+                    if await budget_input.count() > 0:
+                        try:
+                            value = await budget_input.input_value()
+                            daily_budget_usd = float(value.replace("$", "").strip())
+                        except Exception:
+                            daily_budget_usd = None
+
+                # 30-day stats (best-effort — return None for any field whose
+                # selector is missing rather than fail the whole call)
+                async def _read_metric(key: str) -> str | None:
+                    sel = page.locator(SELECTORS[key])
+                    if await sel.count() == 0:
+                        return None
+                    try:
+                        return (await sel.inner_text()).strip()
+                    except Exception:
+                        return None
+
+                last_30d = {
+                    "spend": await _read_metric("ads_30d_spend_text"),
+                    "clicks": await _read_metric("ads_30d_clicks_text"),
+                    "impressions": await _read_metric("ads_30d_impressions_text"),
+                    "orders": await _read_metric("ads_30d_orders_text"),
+                    "revenue": await _read_metric("ads_30d_revenue_text"),
+                }
+
+                return {
+                    "enabled": enabled,
+                    "daily_budget_usd": daily_budget_usd,
+                    "last_30d": last_30d,
+                }
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_ads_create_campaign(
+        daily_budget_usd: float,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Turn Etsy Ads on with the given daily budget.
+
+        Args:
+            daily_budget_usd: Daily ad budget in USD (Etsy converts to shop currency).
+            confirm: Must be True. Prevents accidental enabling — Etsy Ads
+                is a real-money commitment.
+        """
+        if not confirm:
+            return {
+                "error": (
+                    f"Refusing to enable Etsy Ads at ${daily_budget_usd}/day "
+                    "without confirm=True. This commits real money."
+                ),
+                "code": "validation_failed",
+            }
+        if daily_budget_usd <= 0:
+            return {
+                "error": "daily_budget_usd must be > 0.",
+                "code": "validation_failed",
+            }
+
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_ADS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                turn_on = page.locator(SELECTORS["ads_turn_on_button_role"])
+                if await turn_on.count() == 0:
+                    # Already on — caller should use etsy_ads_set_budget
+                    return {
+                        "error": (
+                            "Etsy Ads appears to already be enabled. "
+                            "Use etsy_ads_set_budget to change the budget."
+                        ),
+                        "code": "validation_failed",
+                    }
+
+                try:
+                    await turn_on.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_create_click")
+                    return _selector_missing_error("click 'Turn on Etsy Ads'", screenshot)
+
+                budget_input = page.locator(SELECTORS["ads_daily_budget_input_label"])
+                try:
+                    await budget_input.first.fill(f"{daily_budget_usd:.2f}")
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_create_fill_budget")
+                    return _selector_missing_error("fill daily budget input", screenshot)
+
+                save = page.locator(SELECTORS["ads_save_budget_button_role"])
+                try:
+                    await save.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_create_save")
+                    return _selector_missing_error("click 'Save'", screenshot)
+
+                # Some flows pop a confirm dialog
+                confirm_btn = page.locator(SELECTORS["ads_confirm_dialog_button_role"])
+                if await confirm_btn.count() > 0:
+                    await confirm_btn.first.click()
+
+                return {"enabled": True, "daily_budget_usd": daily_budget_usd}
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_ads_set_budget(daily_budget_usd: float) -> dict[str, Any]:
+        """Modify the daily budget on an already-enabled Etsy Ads campaign.
+
+        For initial enablement use etsy_ads_create_campaign instead.
+        """
+        if daily_budget_usd <= 0:
+            return {
+                "error": "daily_budget_usd must be > 0.",
+                "code": "validation_failed",
+            }
+
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_ADS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                edit = page.locator(SELECTORS["ads_edit_budget_button_role"])
+                if await edit.count() == 0:
+                    return {
+                        "error": (
+                            "'Edit budget' button not found. Ads may be off — "
+                            "use etsy_ads_create_campaign first."
+                        ),
+                        "code": "validation_failed",
+                    }
+                try:
+                    await edit.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_set_edit")
+                    return _selector_missing_error("click 'Edit budget'", screenshot)
+
+                budget_input = page.locator(SELECTORS["ads_daily_budget_input_label"])
+                try:
+                    await budget_input.first.fill(f"{daily_budget_usd:.2f}")
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_set_fill")
+                    return _selector_missing_error("fill daily budget input", screenshot)
+
+                save = page.locator(SELECTORS["ads_save_budget_button_role"])
+                try:
+                    await save.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "ads_set_save")
+                    return _selector_missing_error("click 'Save'", screenshot)
+
+                return {"daily_budget_usd": daily_budget_usd}
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    async def _toggle_ads(action: str) -> dict[str, Any]:
+        """Shared implementation for pause / resume — both click a single
+        button and verify success.
+        """
+        button_key = (
+            "ads_pause_button_role" if action == "pause" else "ads_resume_button_role"
+        )
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_ADS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                btn = page.locator(SELECTORS[button_key])
+                if await btn.count() == 0:
+                    return {
+                        "error": (
+                            f"'{action}' button not found. Ads may already be in "
+                            f"the {'inactive' if action == 'pause' else 'active'} state."
+                        ),
+                        "code": "validation_failed",
+                    }
+                try:
+                    await btn.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, f"ads_{action}")
+                    return _selector_missing_error(f"click '{action}' button", screenshot)
+
+                # Some flows pop a confirm dialog
+                confirm_btn = page.locator(SELECTORS["ads_confirm_dialog_button_role"])
+                if await confirm_btn.count() > 0:
+                    await confirm_btn.first.click()
+
+                return {"enabled": action == "resume"}
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_ads_pause() -> dict[str, Any]:
+        """Pause an active Etsy Ads campaign. Reversible via etsy_ads_resume."""
+        return await _toggle_ads("pause")
+
+    @mcp.tool()
+    async def etsy_ads_resume() -> dict[str, Any]:
+        """Resume a paused Etsy Ads campaign."""
+        return await _toggle_ads("resume")
+
+    @mcp.tool()
+    async def etsy_update_listing_images_order(
+        listing_id: int,
+        image_ids: list[int],
+    ) -> dict[str, Any]:
+        """Reorder images on a listing.
+
+        Etsy v3 has no rank-only image-update endpoint, so this is driven
+        via the seller dashboard's listing-edit page. Each image element
+        carries data-listing-image-id; we evaluate JavaScript in-page to
+        rearrange the DOM order to match image_ids, then click Save.
+
+        Args:
+            listing_id: The listing whose images to reorder.
+            image_ids: List of listing_image_ids in the desired display order.
+        """
+        if not image_ids:
+            return {
+                "error": "image_ids list is empty — pass at least one image id.",
+                "code": "validation_failed",
+            }
+
+        try:
+            async with EtsyBrowser() as page:
+                url = ETSY_LISTING_EDIT_URL_TEMPLATE.format(listing_id=listing_id)
+                await page.goto(url)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                thumbnails = page.locator(SELECTORS["listing_image_thumbnail_css"])
+                count = await thumbnails.count()
+                if count == 0:
+                    screenshot = await _save_error_screenshot(page, "image_reorder_no_thumbs")
+                    return _selector_missing_error(
+                        "find image thumbnails on listing edit page",
+                        screenshot,
+                    )
+
+                # Reorder the DOM nodes in-page via JavaScript. Etsy's UI
+                # detects DOM rearrangement and updates internal state when
+                # Save is clicked. This is more reliable than simulating
+                # drag-and-drop, which is heavily debounced.
+                try:
+                    await page.evaluate(
+                        """([selector, desiredOrder]) => {
+                            const nodes = Array.from(document.querySelectorAll(selector));
+                            const byId = new Map();
+                            for (const n of nodes) {
+                                const id = parseInt(n.getAttribute('data-listing-image-id'));
+                                byId.set(id, n);
+                            }
+                            const parent = nodes[0]?.parentNode;
+                            if (!parent) return false;
+                            for (const id of desiredOrder) {
+                                const n = byId.get(id);
+                                if (n) parent.appendChild(n);
+                            }
+                            return true;
+                        }""",
+                        [SELECTORS["listing_image_thumbnail_css"], image_ids],
+                    )
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "image_reorder_evaluate")
+                    return _selector_missing_error(
+                        "rearrange image DOM nodes via JS",
+                        screenshot,
+                    )
+
+                save = page.locator(SELECTORS["listing_save_button_role"])
+                if await save.count() == 0:
+                    screenshot = await _save_error_screenshot(page, "image_reorder_save_missing")
+                    return _selector_missing_error("find 'Save and continue' button", screenshot)
+                try:
+                    await save.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "image_reorder_save_click")
+                    return _selector_missing_error("click 'Save and continue'", screenshot)
+
+                return {"listing_id": listing_id, "ordered": image_ids}
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    return {
+        "etsy_ads_get_status": etsy_ads_get_status,
+        "etsy_ads_create_campaign": etsy_ads_create_campaign,
+        "etsy_ads_set_budget": etsy_ads_set_budget,
+        "etsy_ads_pause": etsy_ads_pause,
+        "etsy_ads_resume": etsy_ads_resume,
+        "etsy_update_listing_images_order": etsy_update_listing_images_order,
+    }
