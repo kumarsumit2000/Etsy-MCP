@@ -68,4 +68,74 @@ def register_receipt_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
-    return {"etsy_list_receipts": etsy_list_receipts}
+    @mcp.tool()
+    async def etsy_get_receipt(receipt_id: int) -> dict[str, Any]:
+        """Return a single receipt (order) with buyer info, totals, and shipping."""
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/shops/{shop_id}/receipts/{receipt_id}",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_get_receipt_transactions(receipt_id: int) -> dict[str, Any]:
+        """Return the line items (transactions) for a receipt: SKU, title, quantity, price."""
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/shops/{shop_id}/receipts/{receipt_id}/transactions",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_list_shop_payments(
+        min_created: int | None = None,
+        max_created: int | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List your shop's payment ledger entries: charges, fees, credits, refunds.
+
+        Maps to Etsy's getShopPaymentAccountLedgerEntries. For per-receipt
+        payment status use etsy_get_receipt instead.
+        """
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if min_created is not None:
+            params["min_created"] = min_created
+        if max_created is not None:
+            params["max_created"] = max_created
+
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/shops/{shop_id}/payment-account/ledger-entries",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                params=params,
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    return {
+        "etsy_list_receipts": etsy_list_receipts,
+        "etsy_get_receipt": etsy_get_receipt,
+        "etsy_get_receipt_transactions": etsy_get_receipt_transactions,
+        "etsy_list_shop_payments": etsy_list_shop_payments,
+    }
