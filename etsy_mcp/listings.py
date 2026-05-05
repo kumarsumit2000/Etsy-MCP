@@ -414,6 +414,216 @@ def register_listing_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
+    # Fields a listing-template carries — the metadata that's reusable
+    # across many listings. Title, price, quantity, images, and IDs/urls
+    # are intentionally excluded.
+    _TEMPLATE_FIELDS = (
+        "description", "tags", "materials", "taxonomy_id",
+        "shipping_profile_id", "return_policy_id",
+        "who_made", "when_made", "is_supply",
+        "processing_min", "processing_max",
+    )
+
+    @mcp.tool()
+    async def etsy_save_listing_template(
+        listing_id: int,
+        template_path: str,
+    ) -> dict[str, Any]:
+        """Save a listing's reusable metadata to a JSON file.
+
+        The template contains only the boring metadata you'd want to share
+        across many listings: description, tags, materials, taxonomy_id,
+        shipping_profile_id, return_policy_id, processing times, who/when_made,
+        is_supply. Title, price, quantity, and images are NOT carried because
+        they're listing-specific.
+
+        Args:
+            listing_id: Source listing.
+            template_path: Where to write the JSON file. Created if missing.
+        """
+        try:
+            listing = await etsy_request(
+                "GET",
+                f"/application/listings/{listing_id}",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        if not isinstance(listing, dict):
+            return {
+                "error": "Etsy /listings returned unexpected shape.",
+                "code": "unknown",
+            }
+
+        import json as _json
+        tpl = {f: listing.get(f) for f in _TEMPLATE_FIELDS if f in listing}
+        path = Path(template_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(tpl, indent=2))
+        return {"template_path": str(path), "fields": list(tpl.keys())}
+
+    @mcp.tool()
+    async def etsy_apply_listing_template(
+        template_path: str,
+        target_listing_ids: list[int],
+        apply: bool = False,
+    ) -> dict[str, Any]:
+        """Apply a saved template's portable metadata to one or more listings.
+
+        Default apply=False returns a dry-run preview without hitting the API.
+        Pass apply=True to PATCH each target listing.
+
+        Args:
+            template_path: Path to a JSON file produced by etsy_save_listing_template.
+            target_listing_ids: List of listings to update.
+            apply: Default False. Pass True to actually mutate.
+        """
+        path = Path(template_path)
+        if not path.is_file():
+            return {
+                "error": f"Template file not found at {template_path}",
+                "code": "validation_failed",
+            }
+        if not target_listing_ids:
+            return {
+                "error": "target_listing_ids list is empty.",
+                "code": "validation_failed",
+            }
+
+        import json as _json
+        try:
+            tpl = _json.loads(path.read_text())
+        except (ValueError, OSError) as exc:
+            return {
+                "error": f"Could not parse template: {exc}",
+                "code": "validation_failed",
+            }
+
+        if not isinstance(tpl, dict) or not tpl:
+            return {
+                "error": "Template file is empty or not a JSON object.",
+                "code": "validation_failed",
+            }
+
+        if not apply:
+            return {
+                "dry_run": True,
+                "count": len(target_listing_ids),
+                "fields": list(tpl.keys()),
+            }
+
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+
+        updated = 0
+        failed: list[dict[str, Any]] = []
+
+        for listing_id in target_listing_ids:
+            try:
+                await etsy_request(
+                    "PATCH",
+                    f"/application/shops/{shop_id}/listings/{listing_id}",
+                    keystring=keystring,
+                    tokens_path=str(tokens_path),
+                    data=tpl,
+                )
+                updated += 1
+            except EtsyMCPError as exc:
+                failed.append(
+                    {
+                        "listing_id": listing_id,
+                        "error": exc.message,
+                        "code": exc.code.value,
+                    }
+                )
+
+        return {"dry_run": False, "updated": updated, "failed": failed}
+
+    @mcp.tool()
+    async def etsy_duplicate_listing(
+        listing_id: int,
+        new_title: str | None = None,
+    ) -> dict[str, Any]:
+        """Duplicate a listing as a new draft.
+
+        Etsy v3 has no native duplicate endpoint. This tool fetches the
+        source via /listings/{id}, then POSTs a new draft with the same
+        text + inventory metadata. **Images are NOT copied** — re-add
+        them via etsy_upload_listing_image after duplication.
+
+        Args:
+            listing_id: Source listing.
+            new_title: Override title for the new listing. Defaults to the
+                source title.
+        """
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+
+        try:
+            source = await etsy_request(
+                "GET",
+                f"/application/listings/{listing_id}",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        if not isinstance(source, dict):
+            return {
+                "error": "Etsy /listings returned unexpected shape.",
+                "code": "unknown",
+            }
+
+        # Normalize price from {amount, divisor} to a 2-decimal string
+        price = source.get("price") or {}
+        amount = price.get("amount", 0)
+        divisor = price.get("divisor", 100) or 100
+        price_str = f"{(amount / divisor):.2f}"
+
+        data: dict[str, Any] = {
+            "title": new_title or source.get("title", ""),
+            "description": source.get("description", ""),
+            "price": price_str,
+            "quantity": source.get("quantity", 1),
+            "taxonomy_id": source.get("taxonomy_id"),
+            "who_made": source.get("who_made", "i_did"),
+            "when_made": source.get("when_made", "made_to_order"),
+            "is_supply": "true" if source.get("is_supply") else "false",
+            "shipping_profile_id": source.get("shipping_profile_id"),
+        }
+
+        # Optional fields — only forward if present
+        for opt in ("return_policy_id", "processing_min", "processing_max"):
+            if source.get(opt) is not None:
+                data[opt] = source[opt]
+        if source.get("tags"):
+            data["tags"] = source["tags"]
+        if source.get("materials"):
+            data["materials"] = source["materials"]
+
+        try:
+            new_listing = await etsy_request(
+                "POST",
+                f"/application/shops/{shop_id}/listings",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                data=data,
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        return {
+            "new_listing_id": new_listing.get("listing_id") if isinstance(new_listing, dict) else None,
+            "state": "draft",
+            "url": new_listing.get("url") if isinstance(new_listing, dict) else None,
+            "note": "Images not copied — re-upload via etsy_upload_listing_image.",
+        }
+
     return {
         "etsy_list_listings": etsy_list_listings,
         "etsy_search_listings": etsy_search_listings,
@@ -425,4 +635,7 @@ def register_listing_tools(
         "etsy_delete_listing": etsy_delete_listing,
         "etsy_upload_listing_image": etsy_upload_listing_image,
         "etsy_update_listing_inventory": etsy_update_listing_inventory,
+        "etsy_save_listing_template": etsy_save_listing_template,
+        "etsy_apply_listing_template": etsy_apply_listing_template,
+        "etsy_duplicate_listing": etsy_duplicate_listing,
     }

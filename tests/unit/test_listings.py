@@ -468,3 +468,221 @@ async def test_update_listing_inventory_empty_products_rejected(make_tools):
     result = await tools["etsy_update_listing_inventory"](listing_id=777, products=[])
     assert result["code"] == "validation_failed"
     assert "empty" in result["error"].lower() or "at least one" in result["error"].lower()
+
+
+@respx.mock
+async def test_save_listing_template_writes_portable_fields(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    template_path = tmp_path / "tpl.json"
+
+    respx.get(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "listing_id": 777,
+                "title": "Original title",
+                "description": "A boilerplate footer.",
+                "price": {"amount": 1500},
+                "quantity": 5,
+                "tags": ["modern", "cushion"],
+                "materials": ["cotton"],
+                "taxonomy_id": 1234,
+                "shipping_profile_id": 555,
+                "return_policy_id": 9,
+                "who_made": "i_did",
+                "when_made": "made_to_order",
+                "is_supply": False,
+                "processing_min": 3,
+                "processing_max": 7,
+                "url": "https://etsy.com/listing/777",
+            },
+        )
+    )
+
+    result = await tools["etsy_save_listing_template"](
+        listing_id=777,
+        template_path=str(template_path),
+    )
+
+    assert result["template_path"] == str(template_path)
+
+    import json as _json
+    saved = _json.loads(template_path.read_text())
+
+    assert saved["description"] == "A boilerplate footer."
+    assert saved["tags"] == ["modern", "cushion"]
+    assert saved["materials"] == ["cotton"]
+    assert saved["taxonomy_id"] == 1234
+    assert saved["shipping_profile_id"] == 555
+    assert saved["return_policy_id"] == 9
+    assert saved["who_made"] == "i_did"
+    assert saved["when_made"] == "made_to_order"
+    assert saved["is_supply"] is False
+    assert saved["processing_min"] == 3
+    assert saved["processing_max"] == 7
+
+    # NOT carried
+    assert "listing_id" not in saved
+    assert "title" not in saved
+    assert "price" not in saved
+    assert "quantity" not in saved
+    assert "url" not in saved
+
+
+@respx.mock
+async def test_save_listing_template_404_returns_error(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/listings/999").mock(
+        return_value=httpx.Response(404, json={"error": "Listing not found"})
+    )
+
+    result = await tools["etsy_save_listing_template"](
+        listing_id=999,
+        template_path=str(tmp_path / "tpl.json"),
+    )
+
+    assert result["code"] == "not_found"
+
+
+@respx.mock
+async def test_apply_listing_template_dry_run(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    tpl = tmp_path / "tpl.json"
+    import json as _json
+    tpl.write_text(_json.dumps({"tags": ["a", "b"], "materials": ["wool"]}))
+
+    result = await tools["etsy_apply_listing_template"](
+        template_path=str(tpl),
+        target_listing_ids=[1, 2, 3],
+    )
+
+    assert result["dry_run"] is True
+    assert result["count"] == 3
+    assert set(result["fields"]) == {"tags", "materials"}
+
+
+@respx.mock
+async def test_apply_listing_template_apply_calls_patch_per_listing(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    tpl = tmp_path / "tpl.json"
+    import json as _json
+    tpl.write_text(_json.dumps({"description": "Shared footer"}))
+
+    r1 = respx.patch(f"{ETSY_API_BASE}/application/shops/42/listings/1").mock(
+        return_value=httpx.Response(200, json={"listing_id": 1})
+    )
+    r2 = respx.patch(f"{ETSY_API_BASE}/application/shops/42/listings/2").mock(
+        return_value=httpx.Response(200, json={"listing_id": 2})
+    )
+
+    result = await tools["etsy_apply_listing_template"](
+        template_path=str(tpl),
+        target_listing_ids=[1, 2],
+        apply=True,
+    )
+
+    assert r1.called and r2.called
+    assert result["dry_run"] is False
+    assert result["updated"] == 2
+    assert result["failed"] == []
+
+
+async def test_apply_listing_template_missing_file(make_tools, tmp_path):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    result = await tools["etsy_apply_listing_template"](
+        template_path=str(tmp_path / "no-such-file.json"),
+        target_listing_ids=[1],
+        apply=True,
+    )
+    assert result["code"] == "validation_failed"
+
+
+@respx.mock
+async def test_duplicate_listing_creates_draft_with_source_fields(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+
+    respx.get(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "listing_id": 777,
+                "title": "Original cushion",
+                "description": "Original description",
+                "price": {"amount": 1500, "divisor": 100, "currency_code": "USD"},
+                "quantity": 5,
+                "taxonomy_id": 1234,
+                "who_made": "i_did",
+                "when_made": "made_to_order",
+                "is_supply": False,
+                "shipping_profile_id": 555,
+                "return_policy_id": 9,
+                "tags": ["modern", "cushion"],
+                "materials": ["cotton"],
+                "processing_min": 3,
+                "processing_max": 7,
+            },
+        )
+    )
+
+    create_route = respx.post(
+        f"{ETSY_API_BASE}/application/shops/42/listings"
+    ).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "listing_id": 8888,
+                "state": "draft",
+                "url": "https://etsy.com/listing/8888",
+            },
+        )
+    )
+
+    result = await tools["etsy_duplicate_listing"](listing_id=777)
+
+    assert create_route.called
+    sent = dict(httpx.QueryParams(create_route.calls.last.request.content.decode()))
+    assert sent["title"] == "Original cushion"
+    assert sent["description"] == "Original description"
+    assert sent["price"] == "15.00"
+    assert sent["quantity"] == "5"
+    assert sent["taxonomy_id"] == "1234"
+    assert sent["shipping_profile_id"] == "555"
+    assert result["new_listing_id"] == 8888
+
+
+@respx.mock
+async def test_duplicate_listing_with_new_title(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "title": "Original",
+                "description": "D",
+                "price": {"amount": 1000, "divisor": 100},
+                "quantity": 1,
+                "taxonomy_id": 1,
+                "who_made": "i_did",
+                "when_made": "made_to_order",
+                "is_supply": False,
+                "shipping_profile_id": 1,
+            },
+        )
+    )
+    create_route = respx.post(
+        f"{ETSY_API_BASE}/application/shops/42/listings"
+    ).mock(return_value=httpx.Response(201, json={"listing_id": 9999}))
+
+    await tools["etsy_duplicate_listing"](
+        listing_id=777,
+        new_title="Cloned cushion v2",
+    )
+
+    sent = dict(httpx.QueryParams(create_route.calls.last.request.content.decode()))
+    assert sent["title"] == "Cloned cushion v2"
+
+
+async def test_duplicate_listing_missing_shop_id(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="")
+    result = await tools["etsy_duplicate_listing"](listing_id=777)
+    assert result["code"] == "auth_invalid"
