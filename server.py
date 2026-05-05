@@ -22,6 +22,10 @@ from mcp.server.fastmcp import FastMCP
 from etsy_mcp.auth import TokenStore
 from etsy_mcp.errors import EtsyMCPError
 from etsy_mcp.http import etsy_request
+from etsy_mcp.listings import register_listing_tools
+from etsy_mcp.receipts import register_receipt_tools
+from etsy_mcp.reviews import register_review_tools
+from etsy_mcp.shop import register_shop_tools
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
@@ -34,7 +38,37 @@ if not KEYSTRING:
         "ETSY_KEYSTRING is not set. Copy .env.example to .env and fill it in."
     )
 
+
+def _shop_id() -> str:
+    return os.environ.get("ETSY_SHOP_ID", "").strip()
+
+
 mcp = FastMCP("etsy")
+
+register_shop_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
+register_listing_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
+register_receipt_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
+register_review_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
 
 
 def _err_to_dict(exc: EtsyMCPError) -> dict[str, Any]:
