@@ -126,8 +126,22 @@ def register_listing_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
+    @mcp.tool()
+    async def etsy_get_listing_inventory(listing_id: int) -> dict[str, Any]:
+        """Return SKUs, offerings, prices, quantities, and property values for a listing."""
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/listings/{listing_id}/inventory",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
     return {
         "etsy_list_listings": etsy_list_listings,
         "etsy_search_listings": etsy_search_listings,
         "etsy_get_listing": etsy_get_listing,
+        "etsy_get_listing_inventory": etsy_get_listing_inventory,
     }

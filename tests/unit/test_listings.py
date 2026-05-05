@@ -167,3 +167,22 @@ async def test_get_listing_404_returns_structured_error(make_tools):
     result = await tools["etsy_get_listing"](listing_id=999)
 
     assert result["code"] == "not_found"
+
+
+@respx.mock
+async def test_get_listing_inventory_returns_products(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/listings/777/inventory").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "products": [
+                    {"sku": "A-01", "offerings": [{"price": {"amount": 1500, "currency_code": "USD"}, "quantity": 5}]},
+                ],
+            },
+        )
+    )
+
+    result = await tools["etsy_get_listing_inventory"](listing_id=777)
+
+    assert result["products"][0]["sku"] == "A-01"
