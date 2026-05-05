@@ -213,3 +213,81 @@ async def test_get_listing_images_missing_shop_id(make_tools):
     tools = make_tools(register_listing_tools, shop_id="")
     result = await tools["etsy_get_listing_images"](listing_id=777)
     assert result["code"] == "auth_invalid"
+
+
+@respx.mock
+async def test_create_draft_listing_required_fields(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.post(f"{ETSY_API_BASE}/application/shops/42/listings").mock(
+        return_value=httpx.Response(
+            201,
+            json={"listing_id": 9000, "state": "draft", "url": "https://etsy.com/listing/9000"},
+        )
+    )
+
+    result = await tools["etsy_create_draft_listing"](
+        title="Test cushion",
+        description="A test cushion",
+        price_usd=49.95,
+        quantity=10,
+        taxonomy_id=1234,
+        who_made="i_did",
+        when_made="made_to_order",
+        is_supply=False,
+        shipping_profile_id=555,
+    )
+
+    assert result["listing_id"] == 9000
+    # Form-encoded body: parse manually via httpx request content
+    sent = dict(httpx.QueryParams(route.calls.last.request.content.decode()))
+    assert sent["title"] == "Test cushion"
+    assert sent["description"] == "A test cushion"
+    assert sent["price"] == "49.95"
+    assert sent["quantity"] == "10"
+    assert sent["taxonomy_id"] == "1234"
+    assert sent["who_made"] == "i_did"
+    assert sent["when_made"] == "made_to_order"
+    assert sent["is_supply"] == "false"
+    assert sent["shipping_profile_id"] == "555"
+
+
+@respx.mock
+async def test_create_draft_listing_with_optional_arrays(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.post(f"{ETSY_API_BASE}/application/shops/42/listings").mock(
+        return_value=httpx.Response(201, json={"listing_id": 9001})
+    )
+
+    await tools["etsy_create_draft_listing"](
+        title="Test",
+        description="D",
+        price_usd=10.0,
+        quantity=1,
+        taxonomy_id=1,
+        who_made="i_did",
+        when_made="2020_2025",
+        is_supply=False,
+        shipping_profile_id=1,
+        materials=["cotton", "linen"],
+        tags=["modern", "cushion", "blue"],
+        return_policy_id=42,
+        processing_min=3,
+        processing_max=7,
+    )
+
+    body = route.calls.last.request.content.decode()
+    # Repeated form-keys for arrays (Etsy convention)
+    assert body.count("materials=") == 2
+    assert body.count("tags=") == 3
+    assert "return_policy_id=42" in body
+    assert "processing_min=3" in body
+
+
+async def test_create_draft_listing_missing_shop_id(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="")
+    result = await tools["etsy_create_draft_listing"](
+        title="x", description="x", price_usd=1.0, quantity=1,
+        taxonomy_id=1, who_made="i_did", when_made="2020_2025",
+        is_supply=False, shipping_profile_id=1,
+    )
+    assert result["code"] == "auth_invalid"

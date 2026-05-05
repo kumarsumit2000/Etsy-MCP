@@ -155,10 +155,83 @@ def register_listing_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
+    @mcp.tool()
+    async def etsy_create_draft_listing(
+        title: str,
+        description: str,
+        price_usd: float,
+        quantity: int,
+        taxonomy_id: int,
+        who_made: str,
+        when_made: str,
+        is_supply: bool,
+        shipping_profile_id: int,
+        return_policy_id: int | None = None,
+        materials: list[str] | None = None,
+        tags: list[str] | None = None,
+        processing_min: int | None = None,
+        processing_max: int | None = None,
+    ) -> dict[str, Any]:
+        """Create a draft listing in your shop.
+
+        Args:
+            title: Listing title (max 140 chars).
+            description: Body description.
+            price_usd: Price as a float in shop currency (Etsy interprets this in your shop's currency).
+            quantity: Available quantity.
+            taxonomy_id: Etsy seller taxonomy id. Look up via etsy_taxonomy_search.
+            who_made: One of {i_did, someone_else, collective}.
+            when_made: One of {made_to_order, 2020_2025, 2010_2019, 2006_2009, before_2006, ...}.
+            is_supply: True if this is a craft supply.
+            shipping_profile_id: Required. Look up via etsy_list_shipping_profiles (Tier 2).
+            return_policy_id: Optional return policy id.
+            materials: Up to 13 strings.
+            tags: Up to 13 strings.
+            processing_min: Min days to process (for made-to-order).
+            processing_max: Max days to process.
+        """
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+
+        data: dict[str, Any] = {
+            "title": title,
+            "description": description,
+            "price": f"{price_usd:.2f}",
+            "quantity": quantity,
+            "taxonomy_id": taxonomy_id,
+            "who_made": who_made,
+            "when_made": when_made,
+            "is_supply": "true" if is_supply else "false",
+            "shipping_profile_id": shipping_profile_id,
+        }
+        if return_policy_id is not None:
+            data["return_policy_id"] = return_policy_id
+        if materials:
+            data["materials"] = materials  # httpx serializes lists as repeated keys
+        if tags:
+            data["tags"] = tags
+        if processing_min is not None:
+            data["processing_min"] = processing_min
+        if processing_max is not None:
+            data["processing_max"] = processing_max
+
+        try:
+            return await etsy_request(
+                "POST",
+                f"/application/shops/{shop_id}/listings",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                data=data,
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
     return {
         "etsy_list_listings": etsy_list_listings,
         "etsy_search_listings": etsy_search_listings,
         "etsy_get_listing": etsy_get_listing,
         "etsy_get_listing_inventory": etsy_get_listing_inventory,
         "etsy_get_listing_images": etsy_get_listing_images,
+        "etsy_create_draft_listing": etsy_create_draft_listing,
     }
