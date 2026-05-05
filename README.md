@@ -1,6 +1,8 @@
 # Etsy MCP
 
-A Python [MCP](https://modelcontextprotocol.io) server that lets Claude manage an Etsy shop end-to-end — listings, orders, ads, exports, reports, and more. **53 tools** across the Etsy Open API v3 and the seller dashboard (via Playwright for things the API doesn't expose).
+**Connect Claude to your Etsy shop and run everything from a chat.** Listings, orders, ads, exports, refunds, sales, reports — all of it, in plain English, from inside Claude.
+
+This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **53 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#development)
@@ -8,22 +10,25 @@ A Python [MCP](https://modelcontextprotocol.io) server that lets Claude manage a
 
 ---
 
-## What it does
+## Why
 
-Once installed and authenticated, you can talk to your Etsy shop from Claude:
+Etsy's seller dashboard is fine for one-off actions but slow for batch work, anything cross-listing, or anything you want to do at 11pm on a Tuesday by typing one sentence. With this MCP installed, Claude becomes your Etsy operator.
+
+A few sentences you can actually say to Claude once it's running:
 
 - *"List my top 10 active listings"*
 - *"Search my shop for cushion covers"*
-- *"Export every receipt from January to a CSV"*
-- *"Mark receipt 12345 shipped with tracking 1Z999AA UPS"*
-- *"Issue a $5 refund on receipt 67890 for a defective item"*
+- *"Export every receipt from January to /tmp/etsy-q1 as CSV"*
+- *"Mark receipt 12345 shipped with tracking 1Z999AA via UPS"*
+- *"Issue a $5 refund on receipt 67890 — buyer reported damage"*
 - *"Show me revenue by month for 2026"*
 - *"Top 20 listings by units sold this quarter"*
-- *"Bulk update prices on these 50 listings, dry run first"*
+- *"Bulk update price on these 50 listings — dry run first"*
 - *"Pause Etsy Ads"*
-- *"Save listing 999 as a template, then apply it to listings 1-20"*
+- *"Save listing 999 as a template, then apply it to the 20 new draft listings"*
+- *"Create a 15% off sale on my outdoor cushion line, June 1 to June 7"*
 
-Every tool returns structured JSON. Destructive operations (delete, refund, ads-on, bulk renew) require an explicit `confirm=True` flag. Mass-edit tools default to dry-run.
+Every tool returns structured JSON Claude can read back, chain into the next call, or summarize for you. Destructive operations (delete, refund, turn ads on, bulk renew, create sale/coupon) require an explicit `confirm=True` flag — Claude can't accidentally spend your money. Mass-edit tools default to dry-run, so Claude shows you the preview before anything mutates.
 
 ---
 
