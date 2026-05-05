@@ -80,3 +80,15 @@ class ValidationFailed(EtsyMCPError):
 
 class NetworkError(EtsyMCPError):
     code = ErrorCode.NETWORK
+
+
+def missing_shop_id_error() -> dict[str, Any]:
+    """Return the canonical structured error for tools that need ETSY_SHOP_ID
+    but find it unset. Used by every Phase 1a module that calls a shop-scoped
+    Etsy endpoint.
+    """
+    return structured_error(
+        "ETSY_SHOP_ID is not set. Run scripts/bootstrap_oauth.py and paste "
+        "the printed shop_id into your .env.",
+        ErrorCode.AUTH_INVALID,
+    )

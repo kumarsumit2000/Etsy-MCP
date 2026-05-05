@@ -53,3 +53,13 @@ def test_rate_limited_carries_retry_after():
     err = RateLimited("429", retry_after=5)
     assert err.retry_after == 5
     assert err.code == ErrorCode.RATE_LIMITED
+
+
+def test_missing_shop_id_error_shape():
+    from etsy_mcp.errors import missing_shop_id_error
+
+    result = missing_shop_id_error()
+
+    assert result["code"] == "auth_invalid"
+    assert "ETSY_SHOP_ID" in result["error"]
+    assert "bootstrap_oauth.py" in result["error"]
