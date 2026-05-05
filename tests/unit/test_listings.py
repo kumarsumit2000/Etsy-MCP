@@ -186,3 +186,30 @@ async def test_get_listing_inventory_returns_products(make_tools):
     result = await tools["etsy_get_listing_inventory"](listing_id=777)
 
     assert result["products"][0]["sku"] == "A-01"
+
+
+@respx.mock
+async def test_get_listing_images_returns_results(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/shops/42/listings/777/images").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "results": [
+                    {"listing_image_id": 1, "rank": 1, "url_fullxfull": "https://i.etsystatic.com/x.jpg"}
+                ],
+            },
+        )
+    )
+
+    result = await tools["etsy_get_listing_images"](listing_id=777)
+
+    assert result["count"] == 1
+    assert result["results"][0]["listing_image_id"] == 1
+
+
+async def test_get_listing_images_missing_shop_id(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="")
+    result = await tools["etsy_get_listing_images"](listing_id=777)
+    assert result["code"] == "auth_invalid"

@@ -139,9 +139,26 @@ def register_listing_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
+    @mcp.tool()
+    async def etsy_get_listing_images(listing_id: int) -> dict[str, Any]:
+        """Return image metadata (id, rank, urls, alt_text) for a listing."""
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/shops/{shop_id}/listings/{listing_id}/images",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
     return {
         "etsy_list_listings": etsy_list_listings,
         "etsy_search_listings": etsy_search_listings,
         "etsy_get_listing": etsy_get_listing,
         "etsy_get_listing_inventory": etsy_get_listing_inventory,
+        "etsy_get_listing_images": etsy_get_listing_images,
     }
