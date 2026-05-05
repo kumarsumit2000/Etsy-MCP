@@ -28,6 +28,7 @@ from etsy_mcp.exports import register_export_tools
 from etsy_mcp.listings import register_listing_tools
 from etsy_mcp.orders import register_order_tools
 from etsy_mcp.receipts import register_receipt_tools
+from etsy_mcp.reporting import register_reporting_tools
 from etsy_mcp.reviews import register_review_tools
 from etsy_mcp.shop import register_shop_tools
 from etsy_mcp.shop_config import register_shop_config_tools
@@ -105,6 +106,12 @@ register_shop_config_tools(
     shop_id_getter=_shop_id,
 )
 register_bulk_ops_tools(
+    mcp,
+    keystring=KEYSTRING,
+    tokens_path=TOKENS_PATH,
+    shop_id_getter=_shop_id,
+)
+register_reporting_tools(
     mcp,
     keystring=KEYSTRING,
     tokens_path=TOKENS_PATH,
