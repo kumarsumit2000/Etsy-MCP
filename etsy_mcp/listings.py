@@ -100,7 +100,34 @@ def register_listing_tools(
         matched = [r for r in results if _matches(r)]
         return {"count": len(matched), "results": matched}
 
+    @mcp.tool()
+    async def etsy_get_listing(
+        listing_id: int,
+        includes: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Return a single listing by id.
+
+        Args:
+            listing_id: The listing's numeric id.
+            includes: Optional list of related resources to embed. Valid values:
+                Images, Inventory, Videos, Translations, Application.
+        """
+        params: dict[str, Any] = {}
+        if includes:
+            params["includes"] = ",".join(includes)
+        try:
+            return await etsy_request(
+                "GET",
+                f"/application/listings/{listing_id}",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                params=params or None,
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
     return {
         "etsy_list_listings": etsy_list_listings,
         "etsy_search_listings": etsy_search_listings,
+        "etsy_get_listing": etsy_get_listing,
     }

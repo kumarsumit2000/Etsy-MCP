@@ -121,3 +121,49 @@ async def test_search_listings_matches_description(make_tools):
 
     result = await tools["etsy_search_listings"](keyword="linen")
     assert result["count"] == 1
+
+
+@respx.mock
+async def test_get_listing_no_includes(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.get(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(
+            200,
+            json={"listing_id": 777, "title": "Foo", "state": "active"},
+        )
+    )
+
+    result = await tools["etsy_get_listing"](listing_id=777)
+
+    assert route.called
+    # No `includes` param when none requested
+    assert "includes" not in route.calls.last.request.url.params
+    assert result["listing_id"] == 777
+
+
+@respx.mock
+async def test_get_listing_with_includes(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    route = respx.get(f"{ETSY_API_BASE}/application/listings/777").mock(
+        return_value=httpx.Response(
+            200,
+            json={"listing_id": 777, "images": [], "inventory": {}},
+        )
+    )
+
+    await tools["etsy_get_listing"](listing_id=777, includes=["Images", "Inventory"])
+
+    # CSV-joined includes param
+    assert route.calls.last.request.url.params["includes"] == "Images,Inventory"
+
+
+@respx.mock
+async def test_get_listing_404_returns_structured_error(make_tools):
+    tools = make_tools(register_listing_tools, shop_id="42")
+    respx.get(f"{ETSY_API_BASE}/application/listings/999").mock(
+        return_value=httpx.Response(404, json={"error": "Listing not found"})
+    )
+
+    result = await tools["etsy_get_listing"](listing_id=999)
+
+    assert result["code"] == "not_found"
