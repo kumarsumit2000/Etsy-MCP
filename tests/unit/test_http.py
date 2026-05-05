@@ -283,3 +283,54 @@ async def test_request_connect_timeout_is_retried(tmp_tokens_path):
     )
     assert result == {"user_id": 5}
     assert route.call_count == 2
+
+
+from etsy_mcp.http import paginate_all
+
+
+@respx.mock
+async def test_paginate_all_concatenates_pages_until_short(tmp_tokens_path):
+    _seed_tokens(tmp_tokens_path)
+    page1 = {"count": 250, "results": [{"id": i} for i in range(100)]}
+    page2 = {"count": 250, "results": [{"id": i} for i in range(100, 200)]}
+    page3 = {"count": 250, "results": [{"id": i} for i in range(200, 250)]}  # short page → stop
+
+    respx.get(f"{ETSY_API_BASE}/application/shops/42/widgets").mock(
+        side_effect=[
+            httpx.Response(200, json=page1),
+            httpx.Response(200, json=page2),
+            httpx.Response(200, json=page3),
+        ]
+    )
+
+    results = await paginate_all(
+        "GET",
+        "/application/shops/42/widgets",
+        keystring="kkey",
+        tokens_path=str(tmp_tokens_path),
+        params={"state": "active"},
+        page_size=100,
+    )
+
+    assert len(results) == 250
+    assert results[0]["id"] == 0
+    assert results[-1]["id"] == 249
+
+
+@respx.mock
+async def test_paginate_all_empty_first_page_returns_empty_list(tmp_tokens_path):
+    _seed_tokens(tmp_tokens_path)
+    respx.get(f"{ETSY_API_BASE}/application/shops/42/widgets").mock(
+        return_value=httpx.Response(200, json={"count": 0, "results": []})
+    )
+
+    results = await paginate_all(
+        "GET",
+        "/application/shops/42/widgets",
+        keystring="kkey",
+        tokens_path=str(tmp_tokens_path),
+        params={},
+        page_size=100,
+    )
+
+    assert results == []

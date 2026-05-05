@@ -192,3 +192,59 @@ def _safe_json(resp: httpx.Response) -> dict:
         return resp.json()
     except Exception:
         return {"raw": resp.text[:500]}
+
+
+async def paginate_all(
+    method: str,
+    path: str,
+    *,
+    keystring: str,
+    tokens_path: str,
+    params: dict | None = None,
+    page_size: int = 100,
+    results_key: str = "results",
+) -> list[dict]:
+    """Fetch every page of an Etsy paginated endpoint, return concatenated results.
+
+    Calls etsy_request repeatedly with increasing offset until a page returns
+    fewer than page_size items (or zero). Any EtsyMCPError raised by the
+    underlying request propagates — the caller wraps it.
+
+    Args:
+        method: HTTP method (typically "GET").
+        path: Etsy API path (relative or absolute).
+        keystring: Etsy app keystring.
+        tokens_path: Path to .tokens.json.
+        params: Query parameters added to every request. `limit` and `offset`
+            are managed by this function — do not include them.
+        page_size: Items per page. Etsy max is 100.
+        results_key: The key under which the page's items live. Etsy uses
+            "results" universally; the param exists for forward-compatibility.
+
+    Returns:
+        Flat list of all items across all pages.
+    """
+    base_params = dict(params or {})
+    offset = 0
+    out: list[dict] = []
+
+    while True:
+        page_params = {**base_params, "limit": page_size, "offset": offset}
+        page = await etsy_request(
+            method,
+            path,
+            keystring=keystring,
+            tokens_path=tokens_path,
+            params=page_params,
+        )
+        if not isinstance(page, dict):
+            return out  # Defensive — etsy_request normally returns dict for paginated endpoints.
+
+        items = page.get(results_key) or []
+        out.extend(items)
+
+        if len(items) < page_size:
+            break
+        offset += page_size
+
+    return out
