@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from etsy_mcp.auth import TokenStore
@@ -21,18 +23,18 @@ def seeded_tokens_path(tmp_tokens_path):
         access_token="test-acc",
         refresh_token="test-ref",
         expires_in=3600,
-        scope="listings_r shops_r transactions_r feedback_r",
+        scope="listings_r listings_w listings_d shops_r transactions_r feedback_r",
     )
     return tmp_tokens_path
 
 
 @pytest.fixture
 def make_tools(seeded_tokens_path):
-    """Factory: given a register_<domain>_tools function and a shop_id (or None
-    for the missing-shop-id error path), return the dict of tool callables.
+    """Factory: given a register_<domain>_tools function, return the dict of
+    tool callables. Inspects the register function's signature to only pass
+    kwargs it accepts, so modules without shop_id_getter (e.g. taxonomy) work.
 
     Usage:
-        from etsy_mcp.listings import register_listing_tools
         tools = make_tools(register_listing_tools, shop_id="123")
         result = await tools["etsy_list_listings"](limit=5)
     """
@@ -41,11 +43,13 @@ def make_tools(seeded_tokens_path):
         from mcp.server.fastmcp import FastMCP
 
         mcp = FastMCP("etsy-test")
-        return register_fn(
-            mcp,
-            keystring="test-keystring",
-            tokens_path=seeded_tokens_path,
-            shop_id_getter=lambda: shop_id,
-        )
+        sig = inspect.signature(register_fn)
+        kwargs = {
+            "keystring": "test-keystring",
+            "tokens_path": seeded_tokens_path,
+        }
+        if "shop_id_getter" in sig.parameters:
+            kwargs["shop_id_getter"] = lambda: shop_id
+        return register_fn(mcp, **kwargs)
 
     return _factory
