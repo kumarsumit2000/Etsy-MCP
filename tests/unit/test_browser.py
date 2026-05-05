@@ -152,3 +152,70 @@ async def test_update_listing_images_order_empty_image_ids_rejected(make_tools):
     )
     assert result["code"] == "validation_failed"
     assert "empty" in result["error"].lower() or "at least one" in result["error"].lower()
+
+
+async def test_list_active_sales_session_expired(make_tools, tmp_path, monkeypatch):
+    from etsy_mcp.browser import register_browser_tools, _STORAGE_STATE_PATH_ENV
+
+    monkeypatch.setenv(_STORAGE_STATE_PATH_ENV, str(tmp_path / "no-such-file.json"))
+
+    tools = make_tools(register_browser_tools, shop_id="42")
+    assert "etsy_list_active_sales" in tools
+    result = await tools["etsy_list_active_sales"]()
+    assert result["code"] == "session_expired"
+
+
+async def test_create_sale_requires_confirm(make_tools):
+    from etsy_mcp.browser import register_browser_tools
+
+    tools = make_tools(register_browser_tools, shop_id="42")
+    result = await tools["etsy_create_sale"](
+        percent_off=15,
+        listing_ids=[1, 2],
+        start_iso="2026-06-01",
+        end_iso="2026-06-07",
+    )
+    assert result["code"] == "validation_failed"
+    assert "confirm" in result["error"].lower()
+
+
+async def test_create_sale_session_expired(make_tools, tmp_path, monkeypatch):
+    from etsy_mcp.browser import register_browser_tools, _STORAGE_STATE_PATH_ENV
+
+    monkeypatch.setenv(_STORAGE_STATE_PATH_ENV, str(tmp_path / "no-such-file.json"))
+
+    tools = make_tools(register_browser_tools, shop_id="42")
+    result = await tools["etsy_create_sale"](
+        percent_off=15,
+        listing_ids=[1],
+        start_iso="2026-06-01",
+        end_iso="2026-06-07",
+        confirm=True,
+    )
+    assert result["code"] == "session_expired"
+
+
+async def test_create_coupon_requires_confirm(make_tools):
+    from etsy_mcp.browser import register_browser_tools
+
+    tools = make_tools(register_browser_tools, shop_id="42")
+    result = await tools["etsy_create_coupon"](
+        code="SUMMER25",
+        percent_off=25,
+    )
+    assert result["code"] == "validation_failed"
+    assert "confirm" in result["error"].lower()
+
+
+async def test_create_coupon_session_expired(make_tools, tmp_path, monkeypatch):
+    from etsy_mcp.browser import register_browser_tools, _STORAGE_STATE_PATH_ENV
+
+    monkeypatch.setenv(_STORAGE_STATE_PATH_ENV, str(tmp_path / "no-such-file.json"))
+
+    tools = make_tools(register_browser_tools, shop_id="42")
+    result = await tools["etsy_create_coupon"](
+        code="SUMMER25",
+        percent_off=25,
+        confirm=True,
+    )
+    assert result["code"] == "session_expired"

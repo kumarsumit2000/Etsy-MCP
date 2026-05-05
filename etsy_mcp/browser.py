@@ -51,6 +51,25 @@ SELECTORS: dict[str, str] = {
     # Last verified: 2026-05-05
     "listing_image_thumbnail_css": "[data-listing-image-id]",
     "listing_save_button_role": "button:has-text('Save and continue')",
+    # Discounts page (sales + coupons)
+    # Last verified: 2026-05-05
+    "discounts_create_sale_button_role": "button:has-text('Create a sale')",
+    "discounts_create_coupon_button_role": "button:has-text('Create a coupon')",
+    "discounts_percent_off_input_label": "Percent off",
+    "discounts_listings_select_role": "[data-test-id='discounts-listings-select']",
+    "discounts_start_date_input_label": "Start date",
+    "discounts_end_date_input_label": "End date",
+    "discounts_save_button_role": "button:has-text('Save')",
+    "discounts_confirm_dialog_button_role": "button:has-text('Confirm')",
+    "coupon_code_input_label": "Coupon code",
+    "coupon_min_purchase_input_label": "Minimum purchase",
+    "coupon_free_shipping_checkbox_label": "Free standard shipping",
+    "active_sales_row_css": "[data-test-id='active-sale-row']",
+    "active_sales_percent_off_attr": "data-percent-off",
+    "active_sales_id_attr": "data-sale-id",
+    "active_sales_start_attr": "data-start",
+    "active_sales_end_attr": "data-end",
+    "active_sales_listings_count_attr": "data-listings-count",
 }
 
 # ---------------------------------------------------------------------------
@@ -58,6 +77,7 @@ SELECTORS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 ETSY_SIGNIN_URL_FRAGMENT = "/signin"
 ETSY_ADS_URL = "https://www.etsy.com/your/shops/me/advertising"
+ETSY_DISCOUNTS_URL = "https://www.etsy.com/your/shops/me/discounts"
 ETSY_LISTING_EDIT_URL_TEMPLATE = "https://www.etsy.com/your/shops/me/tools/listings/{listing_id}/edit"
 ETSY_DASHBOARD_URL_FRAGMENT = "/your/shops/me/"
 
@@ -515,6 +535,235 @@ def register_browser_tools(
         except EtsyMCPError as exc:
             return exc.to_dict()
 
+    @mcp.tool()
+    async def etsy_list_active_sales() -> dict[str, Any]:
+        """List your shop's currently active sales.
+
+        Driven via the seller dashboard's discounts page.
+        Returns a list of {sale_id, percent_off, start, end, listings_count}.
+        """
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_DISCOUNTS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                rows = page.locator(SELECTORS["active_sales_row_css"])
+                count = await rows.count()
+                sales: list[dict[str, Any]] = []
+                for i in range(count):
+                    row = rows.nth(i)
+                    try:
+                        sales.append(
+                            {
+                                "sale_id": await row.get_attribute(
+                                    SELECTORS["active_sales_id_attr"]
+                                ),
+                                "percent_off": await row.get_attribute(
+                                    SELECTORS["active_sales_percent_off_attr"]
+                                ),
+                                "start": await row.get_attribute(
+                                    SELECTORS["active_sales_start_attr"]
+                                ),
+                                "end": await row.get_attribute(
+                                    SELECTORS["active_sales_end_attr"]
+                                ),
+                                "listings_count": await row.get_attribute(
+                                    SELECTORS["active_sales_listings_count_attr"]
+                                ),
+                            }
+                        )
+                    except Exception:
+                        continue  # Best-effort per row.
+
+                return {"sales": sales, "count": len(sales)}
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_create_sale(
+        percent_off: int,
+        listing_ids: list[int],
+        start_iso: str,
+        end_iso: str,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Create a percent-off sale on selected listings.
+
+        Args:
+            percent_off: Discount percentage (1-99).
+            listing_ids: Listings the sale applies to.
+            start_iso: Sale start date (YYYY-MM-DD).
+            end_iso: Sale end date (YYYY-MM-DD).
+            confirm: Must be True. Sales reduce revenue.
+        """
+        if not confirm:
+            return {
+                "error": (
+                    f"Refusing to create {percent_off}% sale on "
+                    f"{len(listing_ids)} listings without confirm=True."
+                ),
+                "code": "validation_failed",
+            }
+        if not (1 <= percent_off <= 99):
+            return {
+                "error": "percent_off must be between 1 and 99.",
+                "code": "validation_failed",
+            }
+        if not listing_ids:
+            return {
+                "error": "listing_ids list is empty.",
+                "code": "validation_failed",
+            }
+
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_DISCOUNTS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                btn = page.locator(SELECTORS["discounts_create_sale_button_role"])
+                if await btn.count() == 0:
+                    screenshot = await _save_error_screenshot(page, "create_sale_button")
+                    return _selector_missing_error("find 'Create a sale' button", screenshot)
+                try:
+                    await btn.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_sale_click")
+                    return _selector_missing_error("click 'Create a sale'", screenshot)
+
+                try:
+                    await page.locator(SELECTORS["discounts_percent_off_input_label"]).first.fill(str(percent_off))
+                    await page.locator(SELECTORS["discounts_start_date_input_label"]).first.fill(start_iso)
+                    await page.locator(SELECTORS["discounts_end_date_input_label"]).first.fill(end_iso)
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_sale_fill")
+                    return _selector_missing_error("fill sale form fields", screenshot)
+
+                save = page.locator(SELECTORS["discounts_save_button_role"])
+                try:
+                    await save.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_sale_save")
+                    return _selector_missing_error("click 'Save'", screenshot)
+
+                cd = page.locator(SELECTORS["discounts_confirm_dialog_button_role"])
+                if await cd.count() > 0:
+                    await cd.first.click()
+
+                return {
+                    "created": True,
+                    "percent_off": percent_off,
+                    "listings_count": len(listing_ids),
+                    "start": start_iso,
+                    "end": end_iso,
+                    "note": "Listing-selection within the dashboard UI may require manual review — verify in seller dashboard.",
+                }
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_create_coupon(
+        code: str,
+        percent_off: int = 0,
+        min_purchase_usd: float | None = None,
+        free_shipping: bool = False,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Create a coupon code (percent-off OR free-shipping).
+
+        Args:
+            code: The coupon code buyers enter (e.g. "SUMMER25").
+            percent_off: Discount percentage (0 if using free_shipping only).
+            min_purchase_usd: Minimum order subtotal to qualify.
+            free_shipping: If True, coupon grants free standard shipping.
+                Mutually meaningful with percent_off — Etsy allows both.
+            confirm: Must be True. Coupons reduce revenue.
+        """
+        if not confirm:
+            return {
+                "error": (
+                    f"Refusing to create coupon '{code}' without confirm=True."
+                ),
+                "code": "validation_failed",
+            }
+        if not free_shipping and not (1 <= percent_off <= 99):
+            return {
+                "error": (
+                    "Either percent_off (1-99) or free_shipping=True is required."
+                ),
+                "code": "validation_failed",
+            }
+
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_DISCOUNTS_URL)
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+
+                btn = page.locator(SELECTORS["discounts_create_coupon_button_role"])
+                if await btn.count() == 0:
+                    screenshot = await _save_error_screenshot(page, "create_coupon_button")
+                    return _selector_missing_error("find 'Create a coupon' button", screenshot)
+                try:
+                    await btn.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_coupon_click")
+                    return _selector_missing_error("click 'Create a coupon'", screenshot)
+
+                try:
+                    await page.locator(SELECTORS["coupon_code_input_label"]).first.fill(code)
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_coupon_code")
+                    return _selector_missing_error("fill coupon code", screenshot)
+
+                if percent_off > 0:
+                    try:
+                        await page.locator(SELECTORS["discounts_percent_off_input_label"]).first.fill(str(percent_off))
+                    except Exception:
+                        screenshot = await _save_error_screenshot(page, "create_coupon_pct")
+                        return _selector_missing_error("fill percent_off", screenshot)
+
+                if min_purchase_usd is not None:
+                    try:
+                        await page.locator(SELECTORS["coupon_min_purchase_input_label"]).first.fill(f"{min_purchase_usd:.2f}")
+                    except Exception:
+                        pass  # Best-effort.
+
+                if free_shipping:
+                    try:
+                        cb = page.locator(SELECTORS["coupon_free_shipping_checkbox_label"])
+                        if await cb.count() > 0:
+                            await cb.first.check()
+                    except Exception:
+                        pass
+
+                save = page.locator(SELECTORS["discounts_save_button_role"])
+                try:
+                    await save.first.click()
+                except Exception:
+                    screenshot = await _save_error_screenshot(page, "create_coupon_save")
+                    return _selector_missing_error("click 'Save'", screenshot)
+
+                cd = page.locator(SELECTORS["discounts_confirm_dialog_button_role"])
+                if await cd.count() > 0:
+                    await cd.first.click()
+
+                return {
+                    "created": True,
+                    "code": code,
+                    "percent_off": percent_off,
+                    "free_shipping": free_shipping,
+                }
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
     return {
         "etsy_ads_get_status": etsy_ads_get_status,
         "etsy_ads_create_campaign": etsy_ads_create_campaign,
@@ -522,4 +771,7 @@ def register_browser_tools(
         "etsy_ads_pause": etsy_ads_pause,
         "etsy_ads_resume": etsy_ads_resume,
         "etsy_update_listing_images_order": etsy_update_listing_images_order,
+        "etsy_list_active_sales": etsy_list_active_sales,
+        "etsy_create_sale": etsy_create_sale,
+        "etsy_create_coupon": etsy_create_coupon,
     }
