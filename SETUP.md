@@ -69,3 +69,50 @@ You'll see this error from any tool:
 ```
 
 Just re-run `python scripts/bootstrap_oauth.py`. Takes 30 seconds.
+
+## 7. Browser tools (Phase 1c)
+
+Five tools require a Playwright-driven session because Etsy doesn't expose
+their data through the public API:
+- `etsy_ads_get_status`, `etsy_ads_create_campaign`, `etsy_ads_set_budget`,
+  `etsy_ads_pause`, `etsy_ads_resume`
+- `etsy_update_listing_images_order`
+
+### One-time setup
+
+1. Install the Chromium binary (after `pip install -r requirements.txt`):
+   ```bash
+   playwright install chromium
+   ```
+   Downloads ~150 MB. One-time per machine.
+
+2. Run the browser-login bootstrap:
+   ```bash
+   source .venv/bin/activate
+   python scripts/bootstrap_browser_login.py
+   ```
+   - A real Chromium window opens at https://www.etsy.com/signin.
+   - Log in normally. Handle 2FA / captcha as Etsy presents them.
+   - When the URL switches to a `/your/shops/me/...` page the script
+     detects success and saves the session to `.storage_state.json`.
+   - The window closes automatically.
+
+3. From this point, runtime browser tools launch headless Chromium with
+   the saved cookies. Re-run the bootstrap whenever a tool returns
+   `{"code": "session_expired", ...}` (typically every few weeks).
+
+### Debugging selector failures
+
+If a tool returns `{"code": "selector_missing", "screenshot_path": "/tmp/..."}`,
+Etsy redesigned that part of the dashboard. The screenshot shows the new
+layout; update the relevant entry in `SELECTORS` at the top of
+`etsy_mcp/browser.py` and bump the `Last verified:` date.
+
+You can also rerun any browser tool with a visible browser by setting:
+
+```
+ETSY_ADS_HEADFUL=1
+```
+
+in `.env`, which makes the runtime browser non-headless so you can watch
+exactly what's happening.
