@@ -79,10 +79,36 @@
   </article>
 </div>
 
-<div class="card subtle" style="margin-top:2rem">
-  <h3>Coming next</h3>
-  <p>A Claude chat panel where you can ask things like <em>"what's my revenue this week?"</em> or <em>"any custom requests today?"</em> and it calls the right MCP tools for you.</p>
-</div>
+<section id="chat-panel" class="card" style="margin-top:2rem">
+  <header class="chat-header">
+    <h2 style="margin:0">Ask Claude about your shop</h2>
+    <small class="muted">uses your Anthropic key · 55 Etsy tools available</small>
+  </header>
+
+  <div id="chat-log" class="chat-log">
+    <div class="chat-msg assistant">
+      <div class="chat-bubble">
+        Hi — ask me anything about your shop. Try:
+        <ul style="margin:.5rem 0 0; padding-left:1.25rem">
+          <li>What's my revenue this week vs last week?</li>
+          <li>Any unread buyer messages from the last 24 hours?</li>
+          <li>Show me my top 5 listings by units this month.</li>
+          <li>How many orders are still unshipped?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <form id="chat-form" class="chat-form">
+    <textarea id="chat-input" placeholder="Ask anything about your shop…" rows="2" required></textarea>
+    <button type="submit" class="primary" id="chat-send">Send</button>
+  </form>
+
+  <details class="chat-trace" id="chat-trace-wrap" style="display:none">
+    <summary>Tool calls made (debug)</summary>
+    <pre id="chat-trace"></pre>
+  </details>
+</section>
 
 <script>
 const SEVERITY_CLASS = {
@@ -144,5 +170,104 @@ async function refresh() {
 document.getElementById('refresh-btn').addEventListener('click', refresh);
 refresh();
 setInterval(refresh, 60_000);
+
+// ---------- Chat ----------
+const conversation = [];
+
+function appendBubble(role, text) {
+  const log = document.getElementById('chat-log');
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-msg ' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  // Render newlines + minimal markdown (just paragraphs, code fences, bullets)
+  bubble.innerHTML = renderMarkdown(text);
+  wrap.appendChild(bubble);
+  log.appendChild(wrap);
+  log.scrollTop = log.scrollHeight;
+  return bubble;
+}
+
+function renderMarkdown(s) {
+  s = String(s);
+  // escape first
+  s = s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // code fences
+  s = s.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code}</code></pre>`);
+  // inline code
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // bold
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // bullet lists (very rough)
+  s = s.replace(/(?:^|\n)[-*] (.+)/g, (_, item) => `\n<li>${item}</li>`);
+  s = s.replace(/(<li>.+<\/li>(?:\n<li>.+<\/li>)*)/g, '<ul>$1</ul>');
+  // paragraph breaks
+  s = s.split(/\n\n+/).map(p => p.trim() ? (p.startsWith('<') ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`) : '').join('');
+  return s;
+}
+
+function extractText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  }
+  return '';
+}
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  appendBubble('user', text);
+  conversation.push({ role: 'user', content: text });
+
+  const sendBtn = document.getElementById('chat-send');
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Thinking…';
+  const placeholder = appendBubble('assistant', '…');
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: conversation }),
+    });
+    if (!resp.ok) {
+      placeholder.innerHTML = `<em>Error: HTTP ${resp.status}</em>`;
+      return;
+    }
+    const data = await resp.json();
+    const text = extractText(data.assistant_message.content) || '(no response)';
+    placeholder.innerHTML = renderMarkdown(text);
+    conversation.push(data.assistant_message);
+
+    // Show trace
+    if (data.trace && data.trace.length) {
+      document.getElementById('chat-trace-wrap').style.display = 'block';
+      document.getElementById('chat-trace').textContent = JSON.stringify(data.trace, null, 2);
+    }
+  } catch (e) {
+    placeholder.innerHTML = `<em>Network error: ${escapeHtml(e.message)}</em>`;
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+    document.getElementById('chat-input').focus();
+  }
+}
+
+document.getElementById('chat-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  sendMessage(text);
+});
+
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  // Submit on Cmd/Ctrl+Enter; shift+Enter for newline; Enter alone = newline
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+  }
+});
 </script>
 {% endblock %}

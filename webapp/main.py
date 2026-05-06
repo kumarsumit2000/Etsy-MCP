@@ -41,7 +41,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 # Project-internal imports
 from etsy_mcp.auth import TokenStore, generate_pkce_pair, ETSY_TOKEN_URL  # noqa: E402
-from webapp import alerts, state  # noqa: E402
+from webapp import alerts, chat as chat_module, state  # noqa: E402
 
 # Try to import cookie helpers; the script lives at scripts/import_cookies_from_chrome.py
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -350,6 +350,21 @@ async def alerts_snapshot() -> JSONResponse:
     """Return all four alert tiles in one shot. JS polls this every 60s."""
     snap = await alerts.snapshot()
     return JSONResponse(snap)
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: Request) -> JSONResponse:
+    """Run one round of the Claude tool-use loop.
+
+    Request body: {"messages": [{role, content}, ...]}
+    Response: {"assistant_message": ..., "trace": [...], "stop_reason": "..."}
+    """
+    body = await request.json()
+    messages = body.get("messages", [])
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(400, "messages must be a non-empty list")
+    result = await chat_module.chat(messages)
+    return JSONResponse(result)
 
 
 @app.get("/api/alerts/{key}/items")
