@@ -1,34 +1,76 @@
-# Etsy MCP
+# Etsy MCP — Run Your Etsy Shop From Claude
 
-**Connect Claude to your Etsy shop and run everything from a chat.** Listings, orders, ads, exports, refunds, sales, reports — all of it, in plain English, from inside Claude.
+> **An [MCP](https://modelcontextprotocol.io) server that turns Claude into your Etsy seller assistant.** Manage listings, orders, ads, sales, conversations, refunds, reports, and bulk operations — in plain English, from any Claude chat (Claude Code or Claude Desktop). Built for Etsy shop owners who want to automate without writing code.
 
-This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **58 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
+**58 production-ready tools** across the Etsy Open API v3 + Playwright-driven seller dashboard for the things Etsy doesn't expose via API (Etsy Ads, Sales, Coupons, Buyer Messages, image reorder, traffic stats).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#development)
-[![Status](https://img.shields.io/badge/status-feature%20complete-success.svg)](#status)
+[![Status](https://img.shields.io/badge/status-production%20ready-success.svg)](#status)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/protocol-MCP-purple.svg)](https://modelcontextprotocol.io)
+[![Etsy API v3](https://img.shields.io/badge/etsy%20api-v3-orange.svg)](https://developers.etsy.com/documentation/)
+
+**Keywords:** `etsy` · `etsy-api` · `etsy-mcp` · `mcp-server` · `model-context-protocol` · `claude` · `claude-code` · `claude-desktop` · `anthropic` · `etsy-seller-tools` · `etsy-shop-manager` · `etsy-automation` · `ecommerce-automation` · `etsy-ads` · `etsy-analytics` · `python` · `playwright` · `oauth2` · `pkce` · `ai-agent` · `llm-tools` · `seller-productivity` · `etsy-bulk-operations` · `etsy-seller-assistant`
 
 ---
 
-## Why
+## Why this exists
 
-Etsy's seller dashboard is fine for one-off actions but slow for batch work, anything cross-listing, or anything you want to do at 11pm on a Tuesday by typing one sentence. With this MCP installed, Claude becomes your Etsy operator.
+Etsy's seller dashboard is fine for one-off actions but slow for batch work, cross-listing operations, or anything you want to do at 11pm on a Tuesday by typing one sentence. **With this MCP installed, Claude becomes your Etsy operator** — no more clicking through dashboards, no more CSV exports for analysis, no more switching tabs to check ads ROAS or unread messages.
 
-A few sentences you can actually say to Claude once it's running:
+## What you can do once it's running
 
-- *"List my top 10 active listings"*
-- *"Search my shop for cushion covers"*
-- *"Export every receipt from January to /tmp/etsy-q1 as CSV"*
+Real things Etsy sellers ask Claude after installing this:
+
+**Daily operations:**
+- *"How many orders today, total revenue, and any unshipped after 24 hours?"*
+- *"Any unread buyer messages older than 2 hours?"*
 - *"Mark receipt 12345 shipped with tracking 1Z999AA via UPS"*
 - *"Issue a $5 refund on receipt 67890 — buyer reported damage"*
+- *"List my top 10 active listings"*
+- *"Search my shop for cushion covers"*
+
+**Analytics & reporting:**
 - *"Show me revenue by month for 2026"*
 - *"Top 20 listings by units sold this quarter"*
-- *"Bulk update price on these 50 listings — dry run first"*
-- *"Pause Etsy Ads"*
-- *"Save listing 999 as a template, then apply it to the 20 new draft listings"*
-- *"Create a 15% off sale on my outdoor cushion line, June 1 to June 7"*
+- *"Pull our cancellation rate, refund total, and top 3 cancellation reasons for the last 30 days"*
+- *"Which listings have the highest return rate?"*
+- *"What's our Etsy Ads ROAS this month?"*
+- *"Pull traffic stats — visits, conversion rate, abandoned carts"*
 
-Every tool returns structured JSON Claude can read back, chain into the next call, or summarize for you. Destructive operations (delete, refund, turn ads on, bulk renew, create sale/coupon) require an explicit `confirm=True` flag — Claude can't accidentally spend your money. Mass-edit tools default to dry-run, so Claude shows you the preview before anything mutates.
+**Bulk operations:**
+- *"Bulk update price on these 50 listings — dry run first, then apply"*
+- *"Renew the 30 expired listings — confirm the cost first"*
+- *"Mark these 50 orders shipped from this CSV"*
+- *"Save listing 999 as a template, then apply it to the 20 new draft listings"*
+
+**Marketing & ads:**
+- *"Pause Etsy Ads for the weekend"*
+- *"Increase our Etsy Ads daily budget to $200"*
+- *"Create a 15% off sale on my outdoor cushion line, June 1 to June 7"*
+- *"Create a coupon code SUMMER25 for 25% off, free shipping over $100"*
+
+**Catalog work:**
+- *"Create a draft listing for Outdoor Cushion 18x18 at $39.99 in the cushions category"*
+- *"Duplicate listing 999 with a new title"*
+- *"Export every receipt from January to /tmp/etsy-q1 as CSV"*
+
+Every tool returns structured JSON Claude can read back, chain into the next call, or summarize for you. **Destructive operations** (delete, refund, turn ads on, bulk renew, create sale/coupon) require an explicit `confirm=True` flag — Claude can't accidentally spend your money. **Mass-edit tools default to dry-run**, so Claude shows you the preview before anything mutates.
+
+## Key features
+
+| Capability | What it covers |
+|---|---|
+| **Listings management** | Read, search, create draft, update, delete, duplicate, image upload + reorder, save/apply templates, bulk price/quantity updates |
+| **Orders & shipping** | List receipts with filters, mark shipped (single + bulk CSV), issue refunds, payment ledger access |
+| **Etsy Ads** | Read full stats (spend, clicks, ROAS, impressions), set daily budget, pause/resume, create campaign |
+| **Sales & coupons** | List active sales, create percent-off sales, create coupon codes (with min purchase + free shipping rules) |
+| **Buyer messages** | List inbox conversations, filter by unread/missed-over-2h, open thread to read |
+| **Analytics & reports** | Revenue by day/week/month, top listings by revenue/units, shop stats, **traffic + conversion + abandoned carts** (browser-driven), cancellation/refund analysis with per-listing return rate |
+| **Shop config** | Shipping profiles, sections, return policies, production partners |
+| **Bulk exports** | All listings, receipts, reviews → JSON or CSV |
+| **Auth** | OAuth 2.0 PKCE, automatic token refresh, rate-limited HTTP, atomic credential storage |
 
 ---
 
@@ -499,3 +541,33 @@ Personal-use project. No license declared.
 ## Acknowledgements
 
 Built on the [Model Context Protocol](https://modelcontextprotocol.io) Python SDK and FastMCP. HTTP via [httpx](https://www.python-httpx.org/), browser automation via [Playwright](https://playwright.dev/python/), tests via [respx](https://lundberg.github.io/respx/) + [pytest-asyncio](https://pytest-asyncio.readthedocs.io/).
+
+---
+
+## Who is this for?
+
+**Etsy shop owners** who want to:
+- Get a full picture of shop performance (revenue, conversion, returns) without exporting CSVs
+- Manage listings, orders, ads, sales in batch via natural-language commands
+- Monitor buyer messages and ship orders without juggling browser tabs
+- Reduce time spent in Etsy's seller dashboard for routine operations
+
+**Developers / agencies** managing multiple Etsy shops who want a programmable layer over the Etsy API + dashboard for automation, alerts, and reporting.
+
+**Sales / customer-service teams** who can use Claude Desktop conversationally without learning a new dashboard — *"Any unshipped orders?"* and Claude pulls the answer.
+
+## Topics & keywords (for search)
+
+`etsy` `etsy-api` `etsy-mcp` `etsy-tools` `etsy-seller` `etsy-shop-manager` `etsy-automation` `etsy-ads` `etsy-analytics` `etsy-bulk-update` `etsy-cancellation-analysis` `etsy-return-rate` `etsy-conversion-rate` `etsy-traffic-stats`
+`mcp` `mcp-server` `model-context-protocol` `mcp-tools`
+`claude` `claude-code` `claude-desktop` `claude-mcp` `anthropic` `anthropic-claude`
+`ai-agent` `llm-tools` `llm-agent` `ai-assistant` `ai-shop-manager` `conversational-commerce`
+`python` `python-mcp` `playwright` `playwright-python` `httpx` `oauth2` `pkce` `oauth-pkce`
+`ecommerce` `ecommerce-automation` `ecommerce-analytics` `online-shop` `online-store` `dropshipping-alternative`
+`seller-tools` `seller-productivity` `shop-management` `inventory-management` `bulk-edit` `bulk-operations`
+`shipping-automation` `refund-management` `coupon-generator` `discount-management`
+`fastmcp` `respx` `pytest-asyncio`
+
+## Comparable / related projects
+
+If you're searching for similar setups, you might also be interested in: Shopify MCP, WooCommerce MCP, Amazon Seller MCP, eBay MCP, Square MCP, Stripe MCP — this project is the Etsy equivalent in that family.
