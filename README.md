@@ -2,7 +2,7 @@
 
 **Connect Claude to your Etsy shop and run everything from a chat.** Listings, orders, ads, exports, refunds, sales, reports — all of it, in plain English, from inside Claude.
 
-This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **57 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
+This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **58 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#development)
@@ -34,7 +34,7 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 
 ## Status
 
-**Feature complete** against the design spec. All 57 tools across 6 phases are implemented and tested live against an approved Etsy app:
+**Feature complete** against the design spec. All 58 tools across 6 phases are implemented and tested live against an approved Etsy app:
 
 | Phase | Scope | Tools | Tests |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 | 2 | Operational ops (ship, refund, shop config, bulk inventory) | 16 | 33 |
 | 3 | Power tools (templates, sales/coupons, reports) | 8 | 21 |
 | 4 | Buyer/seller conversations (browser-driven) | 2 | — |
-| **Total** | | **57** | **162** |
+| **Total** | | **58** | **162** |
 
 ---
 
@@ -123,7 +123,7 @@ strictly more reliable because cookies come from your real Chrome.
 
 ---
 
-## Tool reference (all 57)
+## Tool reference (all 58)
 
 ### Auth & meta (2)
 
@@ -176,6 +176,7 @@ strictly more reliable because cookies come from your real Chrome.
 | `etsy_get_receipt_transactions(receipt_id)` | Line items per receipt |
 | `etsy_list_shop_payments(min_created, max_created, limit, offset)` | Payment ledger entries (charges, fees, credits, refunds) |
 | `etsy_returns_summary(min_created, max_created, days=30)` | Aggregate cancellations + refunds: by_status counts, cancellation_rate, refund_total_usd, top_3_reasons grouped, sample refund rows |
+| `etsy_per_listing_return_rate(min_created, max_created, days=30, min_orders=2)` | Per-listing breakdown: orders, units, cancellations, return_rate_pct, refunded_amount_usd. Sorted by return rate so the worst offenders surface first. |
 
 ### Order operations (3)
 

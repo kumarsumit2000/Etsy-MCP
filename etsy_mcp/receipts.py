@@ -256,10 +256,182 @@ def register_receipt_tools(
             "sample_refunds": sample_refunds,
         }
 
+    @mcp.tool()
+    async def etsy_per_listing_return_rate(
+        min_created: int | None = None,
+        max_created: int | None = None,
+        days: int = 30,
+        min_orders: int = 2,
+    ) -> dict[str, Any]:
+        """Per-listing return / cancellation rate over a date range.
+
+        Walks every receipt in the window with embedded transactions, then
+        attributes each line-item to its listing_id. Computes:
+          - total_orders per listing (line items, not unique receipts)
+          - cancellations per listing (line items on Canceled or
+            Partially Refunded receipts)
+          - return_rate_pct = cancellations / total_orders
+
+        Args:
+            min_created / max_created: Unix epoch range. If None, uses
+                the last `days` days in shop tz.
+            days: lookback window when range is not given. Default 30.
+            min_orders: drop listings with fewer than N orders to avoid
+                noise from one-off cancels (1/1 = 100% would dominate).
+                Default 2.
+
+        Returns:
+            {
+              "period": {min_created, max_created, days},
+              "min_orders_filter": int,
+              "listing_count_total": int (after filter),
+              "by_listing": [
+                  {listing_id, title, total_orders, total_units,
+                   cancellations, return_rate_pct, refunded_amount_usd},
+                  ...
+              ] sorted by return_rate_pct desc, then cancellations desc,
+              "rolled_up": {total_orders, total_cancellations,
+                            overall_return_rate_pct}
+            }
+        """
+        from datetime import datetime, timedelta
+
+        shop_id = shop_id_getter()
+        if not shop_id:
+            return missing_shop_id_error()
+
+        if min_created is None or max_created is None:
+            now_local = datetime.now(tz=shop_tz()).replace(hour=0, minute=0, second=0, microsecond=0)
+            start = now_local - timedelta(days=days)
+            end = now_local + timedelta(days=1) - timedelta(seconds=1)
+            min_created = int(start.timestamp()) if min_created is None else min_created
+            max_created = int(end.timestamp()) if max_created is None else max_created
+
+        try:
+            receipts = await paginate_all(
+                "GET",
+                f"/application/shops/{shop_id}/receipts",
+                keystring=keystring,
+                tokens_path=str(tokens_path),
+                params={
+                    "min_created": min_created,
+                    "max_created": max_created,
+                    "includes": "Transactions",
+                },
+            )
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+        # Build per-listing aggregates
+        agg: dict[int, dict[str, Any]] = {}
+        for r in receipts:
+            status = r.get("status") or ""
+            is_cancel = status in ("Canceled", "Partially Refunded")
+            # Sum refund USD on this receipt for proportional attribution
+            receipt_refund_usd = 0.0
+            for rf in r.get("refunds") or []:
+                amt = rf.get("amount") or {}
+                if isinstance(amt, dict) and amt.get("amount") is not None:
+                    receipt_refund_usd += amt["amount"] / max(amt.get("divisor", 1), 1)
+
+            txs = r.get("transactions") or []
+            for tx in txs:
+                lid = tx.get("listing_id")
+                if lid is None:
+                    continue
+                qty = int(tx.get("quantity") or 0)
+                price = tx.get("price") or {}
+                unit_usd = 0.0
+                if isinstance(price, dict) and price.get("amount") is not None:
+                    unit_usd = price["amount"] / max(price.get("divisor", 1), 1)
+                line_usd = unit_usd * qty
+                entry = agg.setdefault(
+                    lid,
+                    {
+                        "listing_id": lid,
+                        "title": tx.get("title") or "",
+                        "total_orders": 0,
+                        "total_units": 0,
+                        "cancellations": 0,
+                        "refunded_amount_usd": 0.0,
+                        # transient: track total order_value for proportional refund split
+                        "_gross_value": 0.0,
+                    },
+                )
+                entry["total_orders"] += 1
+                entry["total_units"] += qty
+                entry["_gross_value"] += line_usd
+                if is_cancel:
+                    entry["cancellations"] += 1
+
+        # Distribute receipt-level refund $ proportionally across that
+        # receipt's line items, then roll into the per-listing aggregates.
+        for r in receipts:
+            txs = r.get("transactions") or []
+            if not txs:
+                continue
+            receipt_refund_usd = 0.0
+            for rf in r.get("refunds") or []:
+                amt = rf.get("amount") or {}
+                if isinstance(amt, dict) and amt.get("amount") is not None:
+                    receipt_refund_usd += amt["amount"] / max(amt.get("divisor", 1), 1)
+            if receipt_refund_usd <= 0:
+                continue
+            # Compute receipt's total line value to apportion
+            line_values: list[tuple[int, float]] = []
+            for tx in txs:
+                lid = tx.get("listing_id")
+                if lid is None:
+                    continue
+                price = tx.get("price") or {}
+                qty = int(tx.get("quantity") or 0)
+                unit_usd = 0.0
+                if isinstance(price, dict) and price.get("amount") is not None:
+                    unit_usd = price["amount"] / max(price.get("divisor", 1), 1)
+                line_values.append((lid, unit_usd * qty))
+            total_line_value = sum(v for _, v in line_values) or 1.0
+            for lid, line_usd in line_values:
+                share = (line_usd / total_line_value) * receipt_refund_usd
+                if lid in agg:
+                    agg[lid]["refunded_amount_usd"] += share
+
+        # Filter, compute rates, sort
+        rows: list[dict[str, Any]] = []
+        for lid, e in agg.items():
+            if e["total_orders"] < min_orders:
+                continue
+            rate = (e["cancellations"] / e["total_orders"] * 100) if e["total_orders"] else 0.0
+            e.pop("_gross_value", None)
+            e["return_rate_pct"] = round(rate, 2)
+            e["refunded_amount_usd"] = round(e["refunded_amount_usd"], 2)
+            rows.append(e)
+        rows.sort(key=lambda r: (r["return_rate_pct"], r["cancellations"]), reverse=True)
+
+        total_orders = sum(e["total_orders"] for e in agg.values())
+        total_cancels = sum(e["cancellations"] for e in agg.values())
+        overall_rate = (total_cancels / total_orders * 100) if total_orders else 0.0
+
+        return {
+            "period": {
+                "min_created": min_created,
+                "max_created": max_created,
+                "days": days,
+            },
+            "min_orders_filter": min_orders,
+            "listing_count_total": len(rows),
+            "by_listing": rows,
+            "rolled_up": {
+                "total_orders": total_orders,
+                "total_cancellations": total_cancels,
+                "overall_return_rate_pct": round(overall_rate, 2),
+            },
+        }
+
     return {
         "etsy_list_receipts": etsy_list_receipts,
         "etsy_get_receipt": etsy_get_receipt,
         "etsy_get_receipt_transactions": etsy_get_receipt_transactions,
         "etsy_list_shop_payments": etsy_list_shop_payments,
         "etsy_returns_summary": etsy_returns_summary,
+        "etsy_per_listing_return_rate": etsy_per_listing_return_rate,
     }
