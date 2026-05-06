@@ -4,7 +4,6 @@
 .tokens.json
 .tokens.json.tmp
 .storage_state.json
-.anthropic_key
 
 # Logs
 logs/

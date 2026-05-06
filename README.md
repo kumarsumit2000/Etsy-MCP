@@ -94,32 +94,20 @@ claude mcp add etsy -s user -- /absolute/path/to/Etsy-MCP/.venv/bin/python /abso
 
 Full step-by-step walkthrough with screenshots: [SETUP.md](SETUP.md).
 
----
+### Recurring checks (alerts on a schedule)
 
-## Two ways to use this
+This MCP doesn't ship its own alerter. The intended workflow is: open Claude (Code or Desktop) and ask things like *"Any unread Etsy messages older than 2 hours? Any unshipped paid orders? Anything 1- or 2-star from the last 24 hours?"* — Claude calls the right tools and tells you.
 
-This repo ships **two interfaces** on top of the same MCP. Pick whichever fits.
+If you want this on a schedule (e.g. a 9am daily summary), use Claude Code's [`/schedule`](https://docs.claude.com/en/docs/claude-code/scheduled-tasks) skill (or any cron job that pipes a prompt to `claude`). Combined with a connected Gmail / Slack MCP on Claude's side, the same prompt can also email or DM the result. Example:
 
-### Option A — Claude Code / Claude Desktop (for power users)
-
-Install the MCP and call tools directly from a Claude chat. This is the path you just walked through above. Best if you live in a terminal anyway and want the full 55-tool surface in plain English.
-
-### Option B — Web dashboard (for non-technical users)
-
-A self-hosted web app with a guided 4-step setup wizard, an alerts dashboard, and a built-in Claude chat panel. No terminal needed beyond `pip install` and one command to start it. Designed for sales/category teams who shouldn't have to learn `claude mcp add`.
-
-```bash
-# After step 1 (clone + pip install) above, just run:
-python -m webapp
-# Open http://localhost:8765 — wizard guides you through:
-#   1. Anthropic API key
-#   2. Etsy app credentials (keystring + shared_secret)
-#   3. OAuth (one click, redirects through Etsy and back)
-#   4. Chrome profile picker — imports cookies for buyer messages / ads / sales
-# Then drops you on the dashboard.
+```
+/schedule daily 9am "Run an Etsy morning check: list unread buyer messages > 2h old,
+paid orders that are still unshipped, and any reviews from the last 24h with
+rating ≤ 3. If any of those are non-empty, email a summary to sales@yourshop.com
+via the Gmail connector."
 ```
 
-The web app and the MCP share the same on-disk files (`.env`, `.tokens.json`, `.storage_state.json`), so you can mix-and-match — set up via the wizard, then also wire the MCP into Claude Code if you want both.
+Setup of `/schedule` and Gmail/Slack connectors is on Claude's side, not in this repo. We just provide the Etsy tools — the rest is composition.
 
 ### Alternate: interactive browser login (if you'd rather not import cookies)
 
