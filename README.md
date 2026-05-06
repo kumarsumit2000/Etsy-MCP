@@ -534,7 +534,7 @@ Phase chronology (May 4-5, 2026):
 
 ## License
 
-Personal-use project. No license declared.
+[MIT](LICENSE) — © 2026 Sumit Kumar. Anyone can use, modify, redistribute, and sell software based on this code; just keep the copyright notice. No warranty.
 
 ---
 
