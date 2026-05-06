@@ -108,7 +108,11 @@ def main() -> int:
         print("ERROR: ETSY_KEYSTRING and ETSY_SHARED_SECRET must be set in .env", file=sys.stderr)
         return 2
 
-    redirect_uri = f"http://localhost:{port}/callback"
+    # If ETSY_OAUTH_REDIRECT_URI is set (e.g. Cloudflare Tunnel public URL),
+    # use it as the redirect_uri sent to Etsy. The local callback server still
+    # listens on $port — the tunnel proxies the public URL back to it.
+    redirect_uri = os.environ.get("ETSY_OAUTH_REDIRECT_URI", "").strip() \
+        or f"http://localhost:{port}/callback"
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(24)
 
@@ -167,10 +171,11 @@ def main() -> int:
     )
     print(f"Tokens saved to {tokens_path}")
 
-    # Fetch shop_id
+    # Fetch shop_id. Etsy requires "<keystring>:<shared_secret>" in x-api-key
+    # for OAuth-authenticated calls on approved apps.
     print("Fetching shop_id…")
     headers = {
-        "x-api-key": keystring,
+        "x-api-key": f"{keystring}:{shared_secret}",
         "Authorization": f"Bearer {body['access_token']}",
     }
     with httpx.Client(timeout=20) as client:

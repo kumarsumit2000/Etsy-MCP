@@ -27,9 +27,10 @@ test-results/
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE / harness
 .vscode/
 .idea/
+.claude/
 
 # Exports (generated bulk data dumps)
 exports/

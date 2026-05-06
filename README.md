@@ -2,7 +2,7 @@
 
 **Connect Claude to your Etsy shop and run everything from a chat.** Listings, orders, ads, exports, refunds, sales, reports — all of it, in plain English, from inside Claude.
 
-This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **53 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder).
+This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **55 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#development)
@@ -34,7 +34,7 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 
 ## Status
 
-**Feature complete** against the design spec. All 53 tools across 6 phases are implemented and tested:
+**Feature complete** against the design spec. All 55 tools across 6 phases are implemented and tested live against an approved Etsy app:
 
 | Phase | Scope | Tools | Tests |
 |---|---|---|---|
@@ -44,9 +44,8 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 | 1c | Etsy Ads + listing image reorder (browser-driven) | 6 | 13 |
 | 2 | Operational ops (ship, refund, shop config, bulk inventory) | 16 | 33 |
 | 3 | Power tools (templates, sales/coupons, reports) | 8 | 21 |
-| **Total** | | **53** | **162** |
-
-End-to-end live verification awaits Etsy app approval. Code is fully tested against mocked transport.
+| 4 | Buyer/seller conversations (browser-driven) | 2 | — |
+| **Total** | | **55** | **162** |
 
 ---
 
@@ -63,22 +62,49 @@ pip install -r requirements.txt
 # 2. Install Chromium for browser-driven tools (one-time, ~150 MB)
 playwright install chromium
 
-# 3. Configure
+# 3. Configure credentials
 cp .env.example .env
-# Edit .env with your ETSY_KEYSTRING + ETSY_SHARED_SECRET (see SETUP.md §1-3)
+# Edit .env and fill in:
+#   ETSY_KEYSTRING        — from https://www.etsy.com/developers/your-apps
+#   ETSY_SHARED_SECRET    — same page
+#   ETSY_SHOP_TIMEZONE    — your shop's home tz (default America/Denver)
+# Leave ETSY_SHOP_ID blank for now — step 4 prints it.
 
 # 4. Bootstrap OAuth (opens browser, you click Allow, prints shop_id)
 python scripts/bootstrap_oauth.py
+# Paste the printed shop_id into .env as ETSY_SHOP_ID.
 
-# 5. Paste the printed shop_id into .env as ETSY_SHOP_ID
+# 5. Import Etsy session cookies from your Chrome profile.
+#    The 11 browser-driven tools (messages, ads, sales, coupons, image reorder)
+#    need Etsy.com session cookies — they cannot use the OAuth tokens because
+#    Etsy's seller dashboard isn't part of the public API.
+#
+#    First, log into etsy.com in your normal Chrome browser using the seller
+#    account you want this MCP to act on (e.g. your Shop Manager login).
+#    Then import those cookies — pass --email to target the right Chrome profile:
+python scripts/import_cookies_from_chrome.py --email you@yourshop.com
 
-# 6. Bootstrap browser session (opens visible browser, you log into Etsy)
-python scripts/bootstrap_browser_login.py
+# (Use --list to see all detected Chrome profiles if unsure which email to use.)
 
-# 7. Wire into Claude Code (see SETUP.md §5)
+# 6. Wire into Claude Code (one command, no config file needed):
+claude mcp add etsy -s user -- /absolute/path/to/Etsy-MCP/.venv/bin/python /absolute/path/to/Etsy-MCP/server.py
+
+# Restart Claude Code, then ask: "Call etsy_whoami". You should see your shop info.
 ```
 
-Full step-by-step walkthrough: [SETUP.md](SETUP.md).
+Full step-by-step walkthrough with screenshots: [SETUP.md](SETUP.md).
+
+### Alternate: interactive browser login (if you'd rather not import cookies)
+
+```bash
+python scripts/bootstrap_browser_login.py
+# Opens visible Chromium → you log in manually (handle 2FA / captcha) →
+# script auto-detects success and saves .storage_state.json.
+```
+
+Note: Etsy aggressively bot-detects Playwright login flows. If this fails or
+loops at captcha, fall back to `import_cookies_from_chrome.py` — it's
+strictly more reliable because cookies come from your real Chrome.
 
 ---
 
@@ -209,8 +235,19 @@ CSVs use dot-joined keys for nested fields (e.g. `price.amount`, `price.currency
 
 | Tool | What it does |
 |---|---|
-| `etsy_revenue_report(start, end, group_by="day"\|"week"\|"month")` | Bucket revenue from receipts |
+| `etsy_revenue_report(start, end, group_by="day"\|"week"\|"month")` | Bucket revenue from receipts (in shop's local timezone — see `ETSY_SHOP_TIMEZONE`) |
 | `etsy_top_listings_report(start, end, by="revenue"\|"units", limit=20)` | Top listings (by="views" unsupported — Etsy v3 doesn't expose) |
+
+### Conversations — browser (2)
+
+| Tool | What it does |
+|---|---|
+| `etsy_list_conversations(filter="all"\|"unread"\|"missed", since_hours=48, min_age_hours=0, limit=50)` | List inbox threads. `filter='missed'` = unread + older than `min_age_hours` |
+| `etsy_get_conversation(conversation_id)` | Open a single thread and return its messages |
+
+Etsy's v3 Open API doesn't expose conversations, so these tools drive
+`etsy.com/messages/inbox` via Playwright using the saved `.storage_state.json`.
+Note: opening a thread auto-marks it read on Etsy's side.
 
 ---
 
@@ -257,10 +294,13 @@ Claude calls `etsy_bulk_mark_shipped(csv_path="/path/to/shipped.csv")` and repor
 │   ├── exports.py        # 3 tools — paginate + JSON/CSV with dot-flatten helper
 │   ├── bulk_ops.py       # 3 tools — bulk price/qty/renew with dry-run-by-default
 │   ├── browser.py        # 9 tools — Playwright-driven (ads, sales/coupons, image reorder)
+│   ├── messages.py       # 2 tools — Playwright-driven inbox scraper (filter='missed')
+│   ├── timeutil.py       # shop_tz() helper — interprets dates in ETSY_SHOP_TIMEZONE
 │   └── reporting.py      # 2 tools — revenue + top-listings derived from receipts
 ├── scripts/
-│   ├── bootstrap_oauth.py        # one-time OAuth PKCE flow → .tokens.json
-│   └── bootstrap_browser_login.py # one-time interactive login → .storage_state.json
+│   ├── bootstrap_oauth.py            # one-time OAuth PKCE flow → .tokens.json
+│   ├── bootstrap_browser_login.py    # interactive login → .storage_state.json
+│   └── import_cookies_from_chrome.py # PREFERRED: import Etsy session from Chrome profile
 ├── tests/unit/           # 162 unit tests (respx for HTTP, pytest-asyncio)
 ├── docs/superpowers/     # specs/ + plans/ — every phase's design + implementation plan
 ├── server.py             # FastMCP entrypoint, registers all factories
@@ -307,6 +347,7 @@ Claude calls `etsy_bulk_mark_shipped(csv_path="/path/to/shipped.csv")` and repor
 - 401 → automatic refresh + retry once (independent of retry budget)
 - 404 → `NotFound`; 400 → `ValidationFailed`
 - Headers always include both `x-api-key` AND `Authorization: Bearer ...` (Etsy requires both)
+- `x-api-key` is sent as `<keystring>:<shared_secret>` — Etsy's approved-app endpoints reject the bare keystring with `"Shared secret is required in x-api-key header."`
 
 ---
 
@@ -319,8 +360,10 @@ Claude calls `etsy_bulk_mark_shipped(csv_path="/path/to/shipped.csv")` and repor
 | `ETSY_KEYSTRING` | Etsy app keystring (API key) | ✅ |
 | `ETSY_SHARED_SECRET` | Etsy app shared secret | ✅ |
 | `ETSY_SHOP_ID` | Your shop's numeric ID (printed by `bootstrap_oauth.py`) | ✅ for shop-scoped tools |
+| `ETSY_SHOP_TIMEZONE` | Shop's home tz for date inputs / day bucketing — default `America/Denver` | optional but recommended |
 | `ETSY_LOG_LEVEL` | Logging verbosity | optional |
 | `ETSY_OAUTH_REDIRECT_PORT` | Port for OAuth callback (default 3003) | optional |
+| `ETSY_OAUTH_REDIRECT_URI` | Override the full redirect URI (e.g. Cloudflare tunnel public URL) | optional |
 | `ETSY_ADS_HEADFUL` | Set `1` to show the runtime browser (debugging) | optional |
 | `ETSY_BROWSER_STORAGE_STATE` | Override path to Playwright storage_state.json | optional (tests use it) |
 
