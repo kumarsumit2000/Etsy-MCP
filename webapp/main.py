@@ -25,16 +25,23 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load .env so etsy_request() can find ETSY_SHARED_SECRET, ETSY_SHOP_TIMEZONE,
+# etc. via os.environ. We re-load on every status check so newly-saved
+# credentials take effect without a process restart.
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(PROJECT_ROOT / ".env", override=True)
+
 # Project-internal imports
 from etsy_mcp.auth import TokenStore, generate_pkce_pair, ETSY_TOKEN_URL  # noqa: E402
-from webapp import state  # noqa: E402
+from webapp import alerts, state  # noqa: E402
 
 # Try to import cookie helpers; the script lives at scripts/import_cookies_from_chrome.py
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -333,6 +340,31 @@ async def dashboard(request: Request) -> Any:
     if not all([s["anthropic_key"], s["etsy_credentials"], s["etsy_oauth"], s["browser_cookies"]]):
         return RedirectResponse(url="/", status_code=302)
     return templates.TemplateResponse(request, "dashboard.html", _ctx(request))
+
+
+# ---------------------------------------------------------------------------
+# Alerts API — JSON, polled by the dashboard JS
+# ---------------------------------------------------------------------------
+@app.get("/api/alerts/snapshot")
+async def alerts_snapshot() -> JSONResponse:
+    """Return all four alert tiles in one shot. JS polls this every 60s."""
+    snap = await alerts.snapshot()
+    return JSONResponse(snap)
+
+
+@app.get("/api/alerts/{key}/items")
+async def alerts_detail(key: str) -> JSONResponse:
+    """Return the items list for a single alert (used by the expand-tile UI)."""
+    fn_map = {
+        "missed_chats": alerts.alert_missed_chats,
+        "new_orders": alerts.alert_new_orders_today,
+        "needs_shipping": alerts.alert_needs_shipping,
+        "bad_reviews": alerts.alert_bad_reviews,
+    }
+    fn = fn_map.get(key)
+    if not fn:
+        raise HTTPException(404, f"Unknown alert key: {key}")
+    return JSONResponse(await fn())
 
 
 def run() -> None:  # pragma: no cover

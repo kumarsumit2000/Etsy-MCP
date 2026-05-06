@@ -1,24 +1,148 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · Etsy Copilot{% endblock %}
 {% block content %}
-<div class="card">
-  <h1>You're set up.</h1>
-  <p class="lede">All four steps complete. Alerts dashboard + chat panel are coming next — right now this is the placeholder.</p>
 
-  <table class="kv">
-    <tr><td>Anthropic key</td><td>{% if status.anthropic_key %}<span class="badge ok">connected</span>{% else %}—{% endif %}</td></tr>
-    <tr><td>Etsy app credentials</td><td>{% if status.etsy_credentials %}<span class="badge ok">saved</span>{% else %}—{% endif %}</td></tr>
-    <tr><td>Etsy OAuth</td><td>{% if status.etsy_oauth %}<span class="badge ok">authorized</span>{% else %}—{% endif %}</td></tr>
-    <tr><td>Etsy shop_id</td><td>{% if status.etsy_shop_id %}<span class="badge ok">linked</span>{% else %}—{% endif %}</td></tr>
-    <tr><td>Browser cookies</td><td>{% if status.browser_cookies %}<span class="badge ok">imported</span>{% else %}—{% endif %}</td></tr>
-    <tr><td>Shop timezone</td><td><code>{{ status.shop_timezone }}</code></td></tr>
-  </table>
-
-  <h3 style="margin-top: 2rem;">What's coming</h3>
-  <ul>
-    <li><strong>Alerts dashboard</strong> — unread messages &gt; 2h, new orders today, refund requests, low-star reviews. Polled every 60s.</li>
-    <li><strong>Chat panel</strong> — ask Claude anything about your shop ("revenue last 7 days?", "any custom requests today?"), and it calls the right MCP tools.</li>
-    <li><strong>Desktop notifications</strong> — opt-in browser notifications when new alerts appear.</li>
-  </ul>
+<div class="dash-header">
+  <div>
+    <h1 style="margin:0">Today</h1>
+    <p class="lede" style="margin:.25rem 0 0">Live alerts · timezone <code>{{ status.shop_timezone }}</code></p>
+  </div>
+  <div class="updated-at">
+    <span id="updated-label">loading…</span>
+    <button id="refresh-btn" type="button" class="ghost" title="Refresh now">↻</button>
+  </div>
 </div>
+
+<div class="tiles">
+  <article class="tile" data-key="missed_chats">
+    <header>
+      <span class="tile-icon">💬</span>
+      <h2>Missed chats</h2>
+      <small>unread &gt; 2h</small>
+    </header>
+    <div class="tile-body">
+      <div class="big-number" data-count>—</div>
+      <div class="headline" data-headline>checking…</div>
+    </div>
+    <details class="tile-details">
+      <summary>Show messages</summary>
+      <ul class="item-list" data-items></ul>
+    </details>
+  </article>
+
+  <article class="tile" data-key="new_orders">
+    <header>
+      <span class="tile-icon">📦</span>
+      <h2>New orders today</h2>
+      <small>since midnight</small>
+    </header>
+    <div class="tile-body">
+      <div class="big-number" data-count>—</div>
+      <div class="headline" data-headline>checking…</div>
+    </div>
+    <details class="tile-details">
+      <summary>Show orders</summary>
+      <ul class="item-list" data-items></ul>
+    </details>
+  </article>
+
+  <article class="tile" data-key="needs_shipping">
+    <header>
+      <span class="tile-icon">🚚</span>
+      <h2>Needs shipping</h2>
+      <small>paid · unshipped</small>
+    </header>
+    <div class="tile-body">
+      <div class="big-number" data-count>—</div>
+      <div class="headline" data-headline>checking…</div>
+    </div>
+    <details class="tile-details">
+      <summary>Show pending shipments</summary>
+      <ul class="item-list" data-items></ul>
+    </details>
+  </article>
+
+  <article class="tile" data-key="bad_reviews">
+    <header>
+      <span class="tile-icon">⚠️</span>
+      <h2>Bad reviews</h2>
+      <small>≤ 3★ · last 7 days</small>
+    </header>
+    <div class="tile-body">
+      <div class="big-number" data-count>—</div>
+      <div class="headline" data-headline>checking…</div>
+    </div>
+    <details class="tile-details">
+      <summary>Show reviews</summary>
+      <ul class="item-list" data-items></ul>
+    </details>
+  </article>
+</div>
+
+<div class="card subtle" style="margin-top:2rem">
+  <h3>Coming next</h3>
+  <p>A Claude chat panel where you can ask things like <em>"what's my revenue this week?"</em> or <em>"any custom requests today?"</em> and it calls the right MCP tools for you.</p>
+</div>
+
+<script>
+const SEVERITY_CLASS = {
+  info: '',
+  warn: 'sev-warn',
+  alert: 'sev-alert',
+};
+
+function renderTile(key, alert) {
+  const tile = document.querySelector(`.tile[data-key="${key}"]`);
+  if (!tile) return;
+
+  // severity class on the tile itself
+  for (const c of ['sev-warn', 'sev-alert']) tile.classList.remove(c);
+  if (alert.severity && SEVERITY_CLASS[alert.severity]) tile.classList.add(SEVERITY_CLASS[alert.severity]);
+
+  tile.querySelector('[data-count]').textContent = alert.count ?? 0;
+  tile.querySelector('[data-headline]').textContent = alert.error ?? alert.headline ?? '';
+
+  const ul = tile.querySelector('[data-items]');
+  ul.innerHTML = '';
+  for (const it of (alert.items || [])) {
+    const li = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = it.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.innerHTML = `<strong>${escapeHtml(it.title || '')}</strong>` +
+                     (it.age ? ` <span class="age">· ${escapeHtml(it.age)}</span>` : '') +
+                     `<div class="sub">${escapeHtml(it.subtitle || '')}</div>`;
+    li.appendChild(link);
+    ul.appendChild(li);
+  }
+  if ((alert.items || []).length === 0) {
+    ul.innerHTML = '<li class="muted small">Nothing here.</li>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function refresh() {
+  document.getElementById('updated-label').textContent = 'refreshing…';
+  try {
+    const resp = await fetch('/api/alerts/snapshot', { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    for (const key of Object.keys(data.alerts)) {
+      renderTile(key, data.alerts[key]);
+    }
+    document.getElementById('updated-label').textContent =
+      'updated ' + new Date(data.computed_at * 1000).toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('updated-label').textContent = 'error: ' + e.message;
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', refresh);
+refresh();
+setInterval(refresh, 60_000);
+</script>
 {% endblock %}

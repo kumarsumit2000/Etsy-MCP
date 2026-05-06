@@ -66,6 +66,12 @@ def write_env_keys(updates: dict[str, str]) -> None:
     ENV_PATH.write_text("\n".join(out_lines) + "\n")
     ENV_PATH.chmod(0o600)
 
+    # Mirror updates into os.environ so any code reading the env (etsy_request
+    # for ETSY_SHARED_SECRET, timeutil for ETSY_SHOP_TIMEZONE, etc.) picks up
+    # new values without a process restart.
+    for k, v in updates.items():
+        os.environ[k] = v
+
 
 def read_anthropic_key() -> str:
     """Anthropic key lives in its own file (not .env) so we don't accidentally
