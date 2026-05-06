@@ -170,14 +170,36 @@ async def chat(messages: list[dict[str, Any]], anthropic_key: str | None = None)
     trace: list[dict[str, Any]] = []
 
     for turn in range(MAX_TURNS):
-        resp = await asyncio.to_thread(
-            client.messages.create,
-            model=CLAUDE_MODEL,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            tools=tool_defs,
-            messages=convo,
-        )
+        try:
+            resp = await asyncio.to_thread(
+                client.messages.create,
+                model=CLAUDE_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                tools=tool_defs,
+                messages=convo,
+            )
+        except anthropic.AuthenticationError as exc:
+            return {
+                "assistant_message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": (
+                        "Anthropic rejected the API key. Re-check it on the "
+                        "setup page (`/setup/anthropic`)."
+                    )}],
+                },
+                "trace": trace,
+                "stop_reason": "auth_error",
+            }
+        except anthropic.APIError as exc:
+            return {
+                "assistant_message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": f"Anthropic API error: {exc}"}],
+                },
+                "trace": trace,
+                "stop_reason": "api_error",
+            }
 
         # Append the assistant turn to the conversation
         assistant_content = [block.model_dump() for block in resp.content]
