@@ -76,14 +76,14 @@ Runtime correctness is verified manually after Etsy app approval (covered in Tas
 - [ ] **Step 1: Read current requirements.txt**
 
 ```bash
-cat "/Users/sumit/Desktop/Etsy MCP/requirements.txt"
+cat "<project root>/requirements.txt"
 ```
 
 You should see three lines (mcp, httpx, python-dotenv).
 
 - [ ] **Step 2: Add playwright to requirements.txt**
 
-Open `/Users/sumit/Desktop/Etsy MCP/requirements.txt` and append `playwright>=1.40.0`. The full file should be:
+Open `<project root>/requirements.txt` and append `playwright>=1.40.0`. The full file should be:
 
 ```
 mcp[cli]>=1.2.0
@@ -95,7 +95,7 @@ playwright>=1.40.0
 - [ ] **Step 3: Install Playwright Python package and the Chromium binary**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
@@ -113,7 +113,7 @@ Expected: `OK`.
 
 - [ ] **Step 5: Add ETSY_ADS_HEADFUL hint to .env.example**
 
-Open `/Users/sumit/Desktop/Etsy MCP/.env.example` and append (after the existing `ETSY_OAUTH_REDIRECT_PORT` line):
+Open `<project root>/.env.example` and append (after the existing `ETSY_OAUTH_REDIRECT_PORT` line):
 
 ```
 
@@ -251,7 +251,7 @@ if __name__ == "__main__":
 - [ ] **Step 2: Verify the script imports cleanly**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/python -c "import scripts.bootstrap_browser_login; print('OK')"
 ```
 
@@ -299,7 +299,7 @@ This task scaffolds the module: the `EtsyBrowser` async context manager, the cen
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_browser.py`:
+Create `<project root>/tests/unit/test_browser.py`:
 
 ```python
 """Tests for etsy_mcp.browser tools (unit-testable bits only).
@@ -648,7 +648,7 @@ Expected: FAIL — `etsy_ads_get_status` not in tools dict.
 
 - [ ] **Step 3: Add the tool**
 
-In `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/browser.py`, REPLACE the `register_browser_tools` body (currently `return {}`) with:
+In `<project root>/etsy_mcp/browser.py`, REPLACE the `register_browser_tools` body (currently `return {}`) with:
 
 ```python
 def register_browser_tools(
@@ -1404,7 +1404,7 @@ EOF
 
 - [ ] **Step 1: Add the import**
 
-Open `/Users/sumit/Desktop/Etsy MCP/server.py`. Find the import block:
+Open `<project root>/server.py`. Find the import block:
 
 ```python
 from etsy_mcp.exports import register_export_tools
@@ -1454,7 +1454,7 @@ register_browser_tools(
 - [ ] **Step 3: Verify imports**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 ETSY_KEYSTRING=test_placeholder .venv/bin/python -c "import server; print('OK')"
 ```
 
@@ -1503,7 +1503,7 @@ EOF
 
 - [ ] **Step 1: Append the Phase 1c section to SETUP.md**
 
-Open `/Users/sumit/Desktop/Etsy MCP/SETUP.md` and append at the END:
+Open `<project root>/SETUP.md` and append at the END:
 
 ```markdown
 
@@ -1558,7 +1558,7 @@ exactly what's happening.
 - [ ] **Step 2: Verify SETUP.md is well-formed**
 
 ```bash
-cat "/Users/sumit/Desktop/Etsy MCP/SETUP.md" | tail -50
+cat "<project root>/SETUP.md" | tail -50
 ```
 
 You should see the new section.
@@ -1566,7 +1566,7 @@ You should see the new section.
 - [ ] **Step 3: Run the test suite to confirm no regression**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 
@@ -1598,7 +1598,7 @@ EOF
 - [ ] **Step 1: Run the full test suite**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 

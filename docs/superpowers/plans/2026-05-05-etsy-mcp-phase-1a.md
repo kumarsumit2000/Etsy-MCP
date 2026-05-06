@@ -71,14 +71,14 @@ This task adds a fixture that wraps the boilerplate every per-tool test will use
 - [ ] **Step 1: Inspect current conftest.py**
 
 ```bash
-cat "/Users/sumit/Desktop/Etsy MCP/tests/conftest.py"
+cat "<project root>/tests/conftest.py"
 ```
 
 You should see the existing `tmp_tokens_path` fixture. Keep it.
 
 - [ ] **Step 2: Append the new fixture**
 
-Open `/Users/sumit/Desktop/Etsy MCP/tests/conftest.py` and replace its entire contents with:
+Open `<project root>/tests/conftest.py` and replace its entire contents with:
 
 ```python
 """Shared pytest fixtures for Etsy MCP tests."""
@@ -137,7 +137,7 @@ def make_tools(seeded_tokens_path):
 - [ ] **Step 3: Verify fixtures import cleanly**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/python -c "from tests.conftest import make_tools, seeded_tokens_path, tmp_tokens_path; print('OK')"
 ```
 
@@ -181,7 +181,7 @@ The `missing_shop_id_error()` helper is defined here once and reused by every Ph
 
 - [ ] **Step 1: Add the helper to `errors.py`**
 
-Open `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/errors.py` and append at the END of the file:
+Open `<project root>/etsy_mcp/errors.py` and append at the END of the file:
 
 ```python
 
@@ -200,7 +200,7 @@ def missing_shop_id_error() -> dict[str, Any]:
 
 - [ ] **Step 2: Add a test for the helper**
 
-Append to `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_errors.py`:
+Append to `<project root>/tests/unit/test_errors.py`:
 
 ```python
 
@@ -218,7 +218,7 @@ def test_missing_shop_id_error_shape():
 - [ ] **Step 3: Verify the errors test passes**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest tests/unit/test_errors.py -v
 ```
 
@@ -226,7 +226,7 @@ Expected: 6 passed (5 existing + 1 new).
 
 - [ ] **Step 4: Write the failing shop test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_shop.py`:
+Create `<project root>/tests/unit/test_shop.py`:
 
 ```python
 """Tests for etsy_mcp.shop tools."""
@@ -290,7 +290,7 @@ Expected: FAIL with `ImportError: cannot import name 'register_shop_tools' from 
 
 - [ ] **Step 6: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/shop.py`:
+Create `<project root>/etsy_mcp/shop.py`:
 
 ```python
 """Shop-info tools for Etsy MCP.
@@ -390,7 +390,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_listings.py`:
+Create `<project root>/tests/unit/test_listings.py`:
 
 ```python
 """Tests for etsy_mcp.listings tools."""
@@ -460,7 +460,7 @@ Expected: FAIL with `ImportError: cannot import name 'register_listing_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/listings.py`:
+Create `<project root>/etsy_mcp/listings.py`:
 
 ```python
 """Listing read tools for Etsy MCP.
@@ -1111,7 +1111,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_receipts.py`:
+Create `<project root>/tests/unit/test_receipts.py`:
 
 ```python
 """Tests for etsy_mcp.receipts tools."""
@@ -1184,7 +1184,7 @@ Expected: FAIL with `ImportError: cannot import name 'register_receipt_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/receipts.py`:
+Create `<project root>/etsy_mcp/receipts.py`:
 
 ```python
 """Receipt + payment read tools for Etsy MCP.
@@ -1652,7 +1652,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_reviews.py`:
+Create `<project root>/tests/unit/test_reviews.py`:
 
 ```python
 """Tests for etsy_mcp.reviews tools."""
@@ -1725,7 +1725,7 @@ Expected: FAIL â€” `register_review_tools` not importable.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/reviews.py`:
+Create `<project root>/etsy_mcp/reviews.py`:
 
 ```python
 """Review read tools for Etsy MCP.
@@ -2078,14 +2078,14 @@ EOF
 - [ ] **Step 1: Read current server.py**
 
 ```bash
-cat "/Users/sumit/Desktop/Etsy MCP/server.py"
+cat "<project root>/server.py"
 ```
 
 You should see the existing module: imports, `mcp = FastMCP("etsy")`, `etsy_whoami`, `etsy_token_status`, `if __name__ == "__main__": mcp.run()`.
 
 - [ ] **Step 2: Modify `server.py` to call the four registration functions**
 
-Open `/Users/sumit/Desktop/Etsy MCP/server.py` and add the following imports near the existing imports (after `from etsy_mcp.http import etsy_request`):
+Open `<project root>/server.py` and add the following imports near the existing imports (after `from etsy_mcp.http import etsy_request`):
 
 ```python
 from etsy_mcp.listings import register_listing_tools
@@ -2135,7 +2135,7 @@ Leave the existing `etsy_whoami` and `etsy_token_status` definitions UNCHANGED â
 - [ ] **Step 3: Verify the server module imports cleanly**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 ETSY_KEYSTRING=test_placeholder .venv/bin/python -c "import server; print('OK')"
 ```
 
@@ -2183,7 +2183,7 @@ EOF
 - [ ] **Step 1: Run the full suite one final time**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v
 ```
 

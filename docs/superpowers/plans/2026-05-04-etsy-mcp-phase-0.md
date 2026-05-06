@@ -63,7 +63,7 @@
 - [ ] **Step 1: Create the Python virtual environment**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 python3 -m venv .venv
 source .venv/bin/activate
 python --version
@@ -222,7 +222,7 @@ pytest -v -k auth      # focused
 ## 3. Configure local environment
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 cp .env.example .env
 # Open .env and paste your Keystring + Shared Secret
 ```
@@ -251,8 +251,8 @@ Edit `~/.claude/claude_desktop_config.json` (or your project-scoped config) and 
 {
   "mcpServers": {
     "etsy": {
-      "command": "/Users/sumit/Desktop/Etsy MCP/.venv/bin/python",
-      "args": ["/Users/sumit/Desktop/Etsy MCP/server.py"]
+      "command": "<project root>/.venv/bin/python",
+      "args": ["<project root>/server.py"]
     }
   }
 }
@@ -1943,8 +1943,8 @@ Edit `~/.claude/claude_desktop_config.json` (or your project-scoped MCP config) 
 {
   "mcpServers": {
     "etsy": {
-      "command": "/Users/sumit/Desktop/Etsy MCP/.venv/bin/python",
-      "args": ["/Users/sumit/Desktop/Etsy MCP/server.py"]
+      "command": "<project root>/.venv/bin/python",
+      "args": ["<project root>/server.py"]
     }
   }
 }

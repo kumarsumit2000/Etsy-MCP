@@ -179,7 +179,7 @@ You should see something like:
 ```json
 {
   "user_id": 12345678,
-  "shop_id": 31937130,
+  "shop_id": 12345678,
   "shop_name": "YourShop"
 }
 ```

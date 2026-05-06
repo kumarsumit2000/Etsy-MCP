@@ -137,7 +137,7 @@ async def test_save_listing_template_404_returns_error(make_tools, tmp_path):
 - [ ] **Step 2: Run tests to verify failure**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest tests/unit/test_listings.py::test_save_listing_template_writes_portable_fields -v
 ```
 
@@ -145,7 +145,7 @@ Expected: FAIL — `etsy_save_listing_template` not in tools dict.
 
 - [ ] **Step 3: Add the tool**
 
-In `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/listings.py`, INSIDE `register_listing_tools` (after `etsy_update_listing_inventory`, before the return dict), add:
+In `<project root>/etsy_mcp/listings.py`, INSIDE `register_listing_tools` (after `etsy_update_listing_inventory`, before the return dict), add:
 
 ```python
     # Fields a listing-template carries — the metadata that's reusable
@@ -724,7 +724,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Add SELECTORS + tool**
 
-In `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/browser.py`, in the SELECTORS dict (find the line with `"listing_save_button_role": ...`), APPEND new entries:
+In `<project root>/etsy_mcp/browser.py`, in the SELECTORS dict (find the line with `"listing_save_button_role": ...`), APPEND new entries:
 
 ```python
     # Discounts page (sales + coupons)
@@ -1241,7 +1241,7 @@ Aggregates revenue from receipts in a date range, grouped by day/week/month.
 
 - [ ] **Step 1: Write failing tests**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_reporting.py`:
+Create `<project root>/tests/unit/test_reporting.py`:
 
 ```python
 """Tests for etsy_mcp.reporting tools."""
@@ -1377,7 +1377,7 @@ Expected: FAIL — `cannot import name 'register_reporting_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/reporting.py`:
+Create `<project root>/etsy_mcp/reporting.py`:
 
 ```python
 """Reporting tools — derived from receipts.
@@ -1794,7 +1794,7 @@ EOF
 
 - [ ] **Step 1: Add the import**
 
-Open `/Users/sumit/Desktop/Etsy MCP/server.py`. Find the import block. Add:
+Open `<project root>/server.py`. Find the import block. Add:
 
 ```python
 from etsy_mcp.reporting import register_reporting_tools
@@ -1818,7 +1818,7 @@ register_reporting_tools(
 - [ ] **Step 3: Verify imports**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 ETSY_KEYSTRING=test_placeholder .venv/bin/python -c "import server; print('OK')"
 ```
 
@@ -1868,7 +1868,7 @@ EOF
 - [ ] **Step 1: Run the full suite**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 

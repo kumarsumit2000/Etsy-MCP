@@ -1,8 +1,8 @@
 # Etsy MCP — Design Spec
 
 **Date:** 2026-05-04
-**Owner:** Sumit (sumit@cozycornerpatios.com)
-**Project root:** `/Users/sumit/Desktop/Etsy MCP/`
+**Owner:** Sumit (<owner>)
+**Project root:** `<project root>/`
 **Status:** Approved for planning
 
 ## 1. Goal

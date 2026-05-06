@@ -127,7 +127,7 @@ async def test_paginate_all_empty_first_page_returns_empty_list(tmp_tokens_path)
 - [ ] **Step 2: Run tests to verify failure**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest tests/unit/test_http.py::test_paginate_all_concatenates_pages_until_short -v
 ```
 
@@ -244,7 +244,7 @@ EOF
 
 - [ ] **Step 1: Update `tests/conftest.py`**
 
-Open `/Users/sumit/Desktop/Etsy MCP/tests/conftest.py` and replace the `make_tools` fixture body. The full file should be:
+Open `<project root>/tests/conftest.py` and replace the `make_tools` fixture body. The full file should be:
 
 ```python
 """Shared pytest fixtures for Etsy MCP tests."""
@@ -307,7 +307,7 @@ def make_tools(seeded_tokens_path):
 - [ ] **Step 2: Verify the existing test suite still passes**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 
@@ -433,7 +433,7 @@ Expected: FAIL — `etsy_create_draft_listing` not in tools dict.
 
 - [ ] **Step 3: Add the tool to `register_listing_tools`**
 
-In `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/listings.py`, INSIDE `register_listing_tools` (after `etsy_get_listing_images`, before the return dict), add:
+In `<project root>/etsy_mcp/listings.py`, INSIDE `register_listing_tools` (after `etsy_get_listing_images`, before the return dict), add:
 
 ```python
     @mcp.tool()
@@ -1204,7 +1204,7 @@ Etsy seller taxonomy endpoint returns the entire tree. We fetch once, cache in a
 
 - [ ] **Step 1: Write failing tests**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_taxonomy.py`:
+Create `<project root>/tests/unit/test_taxonomy.py`:
 
 ```python
 """Tests for etsy_mcp.taxonomy tools."""
@@ -1327,7 +1327,7 @@ Expected: FAIL — `cannot import name 'register_taxonomy_tools' from 'etsy_mcp.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/taxonomy.py`:
+Create `<project root>/etsy_mcp/taxonomy.py`:
 
 ```python
 """Taxonomy lookup for Etsy MCP.
@@ -1477,7 +1477,7 @@ This task introduces the export module + the shared CSV flattening helper. Subse
 
 - [ ] **Step 1: Write failing tests**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_exports.py`:
+Create `<project root>/tests/unit/test_exports.py`:
 
 ```python
 """Tests for etsy_mcp.exports tools."""
@@ -1584,7 +1584,7 @@ Expected: FAIL — `cannot import name 'register_export_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/exports.py`:
+Create `<project root>/etsy_mcp/exports.py`:
 
 ```python
 """Bulk export tools for Etsy MCP.
@@ -2044,7 +2044,7 @@ EOF
 - [ ] **Step 1: Read current server.py to confirm location**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 grep -n "register_" server.py
 ```
 
@@ -2052,7 +2052,7 @@ You should see four existing register calls (shop, listings, receipts, reviews).
 
 - [ ] **Step 2: Add the two new imports**
 
-Open `/Users/sumit/Desktop/Etsy MCP/server.py`. Find the existing block:
+Open `<project root>/server.py`. Find the existing block:
 
 ```python
 from etsy_mcp.listings import register_listing_tools
@@ -2154,7 +2154,7 @@ EOF
 - [ ] **Step 1: Run the full suite**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 

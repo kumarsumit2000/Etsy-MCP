@@ -67,7 +67,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_orders.py`:
+Create `<project root>/tests/unit/test_orders.py`:
 
 ```python
 """Tests for etsy_mcp.orders tools."""
@@ -135,7 +135,7 @@ async def test_mark_receipt_shipped_missing_shop_id(make_tools):
 - [ ] **Step 2: Run test to verify failure**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest tests/unit/test_orders.py -v
 ```
 
@@ -143,7 +143,7 @@ Expected: FAIL — `cannot import name 'register_order_tools' from 'etsy_mcp.ord
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/orders.py`:
+Create `<project root>/etsy_mcp/orders.py`:
 
 ```python
 """Order/receipt write tools for Etsy MCP.
@@ -667,7 +667,7 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_shop_config.py`:
+Create `<project root>/tests/unit/test_shop_config.py`:
 
 ```python
 """Tests for etsy_mcp.shop_config tools."""
@@ -769,7 +769,7 @@ Expected: FAIL — `cannot import name 'register_shop_config_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/shop_config.py`:
+Create `<project root>/etsy_mcp/shop_config.py`:
 
 ```python
 """Shop config tools for Etsy MCP.
@@ -1490,7 +1490,7 @@ Mass-edit prices across many listings. Dry-run by default — `apply=True` opt-i
 
 - [ ] **Step 1: Write failing tests**
 
-Create `/Users/sumit/Desktop/Etsy MCP/tests/unit/test_bulk_ops.py`:
+Create `<project root>/tests/unit/test_bulk_ops.py`:
 
 ```python
 """Tests for etsy_mcp.bulk_ops tools."""
@@ -1588,7 +1588,7 @@ Expected: FAIL — `cannot import name 'register_bulk_ops_tools'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `/Users/sumit/Desktop/Etsy MCP/etsy_mcp/bulk_ops.py`:
+Create `<project root>/etsy_mcp/bulk_ops.py`:
 
 ```python
 """Bulk write operations for Etsy MCP.
@@ -2176,7 +2176,7 @@ EOF
 
 - [ ] **Step 1: Add the imports**
 
-Open `/Users/sumit/Desktop/Etsy MCP/server.py`. Find the existing import block:
+Open `<project root>/server.py`. Find the existing import block:
 
 ```python
 from etsy_mcp.browser import register_browser_tools
@@ -2242,7 +2242,7 @@ register_bulk_ops_tools(
 - [ ] **Step 3: Verify imports**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 ETSY_KEYSTRING=test_placeholder .venv/bin/python -c "import server; print('OK')"
 ```
 
@@ -2292,7 +2292,7 @@ EOF
 - [ ] **Step 1: Run the full test suite**
 
 ```bash
-cd "/Users/sumit/Desktop/Etsy MCP"
+cd "<project root>"
 .venv/bin/pytest -v 2>&1 | tail -3
 ```
 
