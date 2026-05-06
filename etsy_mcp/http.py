@@ -12,6 +12,7 @@ All API-driven tools call etsy_request(). The wrapper handles:
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 
 import httpx
@@ -93,8 +94,14 @@ async def etsy_request(
             access_token = await get_access_token(
                 keystring=keystring, tokens_path=tokens_path
             )
+            # Etsy requires the shared secret appended to the keystring in the
+            # x-api-key header (format: "<keystring>:<shared_secret>") for
+            # OAuth-authenticated calls on approved apps. Falls back to bare
+            # keystring if no secret is configured.
+            shared_secret = os.environ.get("ETSY_SHARED_SECRET", "").strip()
+            api_key_header = f"{keystring}:{shared_secret}" if shared_secret else keystring
             headers = {
-                "x-api-key": keystring,
+                "x-api-key": api_key_header,
                 "Authorization": f"Bearer {access_token}",
                 "Accept": "application/json",
             }

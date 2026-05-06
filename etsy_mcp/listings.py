@@ -142,13 +142,10 @@ def register_listing_tools(
     @mcp.tool()
     async def etsy_get_listing_images(listing_id: int) -> dict[str, Any]:
         """Return image metadata (id, rank, urls, alt_text) for a listing."""
-        shop_id = shop_id_getter()
-        if not shop_id:
-            return missing_shop_id_error()
         try:
             return await etsy_request(
                 "GET",
-                f"/application/shops/{shop_id}/listings/{listing_id}/images",
+                f"/application/listings/{listing_id}/images",
                 keystring=keystring,
                 tokens_path=str(tokens_path),
             )
