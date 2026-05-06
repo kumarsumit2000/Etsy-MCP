@@ -94,6 +94,33 @@ claude mcp add etsy -s user -- /absolute/path/to/Etsy-MCP/.venv/bin/python /abso
 
 Full step-by-step walkthrough with screenshots: [SETUP.md](SETUP.md).
 
+---
+
+## Two ways to use this
+
+This repo ships **two interfaces** on top of the same MCP. Pick whichever fits.
+
+### Option A — Claude Code / Claude Desktop (for power users)
+
+Install the MCP and call tools directly from a Claude chat. This is the path you just walked through above. Best if you live in a terminal anyway and want the full 55-tool surface in plain English.
+
+### Option B — Web dashboard (for non-technical users)
+
+A self-hosted web app with a guided 4-step setup wizard, an alerts dashboard, and a built-in Claude chat panel. No terminal needed beyond `pip install` and one command to start it. Designed for sales/category teams who shouldn't have to learn `claude mcp add`.
+
+```bash
+# After step 1 (clone + pip install) above, just run:
+python -m webapp
+# Open http://localhost:8765 — wizard guides you through:
+#   1. Anthropic API key
+#   2. Etsy app credentials (keystring + shared_secret)
+#   3. OAuth (one click, redirects through Etsy and back)
+#   4. Chrome profile picker — imports cookies for buyer messages / ads / sales
+# Then drops you on the dashboard.
+```
+
+The web app and the MCP share the same on-disk files (`.env`, `.tokens.json`, `.storage_state.json`), so you can mix-and-match — set up via the wizard, then also wire the MCP into Claude Code if you want both.
+
 ### Alternate: interactive browser login (if you'd rather not import cookies)
 
 ```bash

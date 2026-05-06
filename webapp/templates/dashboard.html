@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Etsy Copilot{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>You're set up.</h1>
+  <p class="lede">All four steps complete. Alerts dashboard + chat panel are coming next — right now this is the placeholder.</p>
+
+  <table class="kv">
+    <tr><td>Anthropic key</td><td>{% if status.anthropic_key %}<span class="badge ok">connected</span>{% else %}—{% endif %}</td></tr>
+    <tr><td>Etsy app credentials</td><td>{% if status.etsy_credentials %}<span class="badge ok">saved</span>{% else %}—{% endif %}</td></tr>
+    <tr><td>Etsy OAuth</td><td>{% if status.etsy_oauth %}<span class="badge ok">authorized</span>{% else %}—{% endif %}</td></tr>
+    <tr><td>Etsy shop_id</td><td>{% if status.etsy_shop_id %}<span class="badge ok">linked</span>{% else %}—{% endif %}</td></tr>
+    <tr><td>Browser cookies</td><td>{% if status.browser_cookies %}<span class="badge ok">imported</span>{% else %}—{% endif %}</td></tr>
+    <tr><td>Shop timezone</td><td><code>{{ status.shop_timezone }}</code></td></tr>
+  </table>
+
+  <h3 style="margin-top: 2rem;">What's coming</h3>
+  <ul>
+    <li><strong>Alerts dashboard</strong> — unread messages &gt; 2h, new orders today, refund requests, low-star reviews. Polled every 60s.</li>
+    <li><strong>Chat panel</strong> — ask Claude anything about your shop ("revenue last 7 days?", "any custom requests today?"), and it calls the right MCP tools.</li>
+    <li><strong>Desktop notifications</strong> — opt-in browser notifications when new alerts appear.</li>
+  </ul>
+</div>
+{% endblock %}
