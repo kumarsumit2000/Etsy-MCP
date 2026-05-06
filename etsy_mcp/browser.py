@@ -33,20 +33,18 @@ from .errors import EtsyMCPError, missing_shop_id_error
 # selector key suffix (_role, _label, _text, _css).
 SELECTORS: dict[str, str] = {
     # Ads page
-    # Last verified: 2026-05-05
-    "ads_status_banner_text": "Etsy Ads",  # text on the page when ads section loads
+    # Last verified: 2026-05-06 (Etsy redesigned the panel; stats moved into
+    # <p class="wt-text-heading"> with sibling <span> labels — we now read
+    # them via a label-anchored JS scraper instead of CSS data-test-ids,
+    # which Etsy removed)
+    "ads_status_banner_text": "Etsy Ads",
     "ads_turn_on_button_role": "button:has-text('Turn on Etsy Ads')",
-    "ads_pause_button_role": "button:has-text('Pause')",
-    "ads_resume_button_role": "button:has-text('Resume')",
-    "ads_edit_budget_button_role": "button:has-text('Edit budget')",
-    "ads_daily_budget_input_label": "Daily budget",
-    "ads_save_budget_button_role": "button:has-text('Save')",
+    "ads_pause_button_role": "button:has-text('Pause Etsy Ads')",
+    "ads_resume_button_role": "button:has-text('Resume Etsy Ads')",
+    "ads_edit_budget_button_role": "button:has-text('Manage your budget')",
+    "ads_daily_budget_input_label": "input[aria-label='Change your Etsy Ads budget']",
+    "ads_save_budget_button_role": "button:has-text('Update budget')",
     "ads_confirm_dialog_button_role": "button:has-text('Confirm')",
-    "ads_30d_spend_text": "[data-test-id='ads-30d-spend']",
-    "ads_30d_clicks_text": "[data-test-id='ads-30d-clicks']",
-    "ads_30d_impressions_text": "[data-test-id='ads-30d-impressions']",
-    "ads_30d_orders_text": "[data-test-id='ads-30d-orders']",
-    "ads_30d_revenue_text": "[data-test-id='ads-30d-revenue']",
     # Listing edit page
     # Last verified: 2026-05-05
     "listing_image_thumbnail_css": "[data-listing-image-id]",
@@ -288,23 +286,58 @@ def register_browser_tools(
                         except Exception:
                             daily_budget_usd = None
 
-                # 30-day stats (best-effort — return None for any field whose
-                # selector is missing rather than fail the whole call)
-                async def _read_metric(key: str) -> str | None:
-                    sel = page.locator(SELECTORS[key])
-                    if await sel.count() == 0:
-                        return None
-                    try:
-                        return (await sel.inner_text()).strip()
-                    except Exception:
-                        return None
+                # 30-day stats — Etsy removed the data-test-id selectors during
+                # the May 2026 redesign. The header now renders each metric as
+                # a <p class*="text-heading"> value with a nearby <span> label.
+                # We scrape via label text + walking up to find the value,
+                # which stays robust if Etsy renames classes again. Etsy
+                # renamed "Impressions" → "Views" in the same redesign; we
+                # map it back for stable output schema.
+                # Wait for the headings to render — Etsy hydrates stats async.
+                try:
+                    await page.wait_for_function(
+                        """() => document.querySelectorAll('[class*="wt-text-heading"]').length >= 5""",
+                        timeout=8000,
+                    )
+                except Exception:
+                    pass  # fall through; scraper handles missing values
 
+                stats = await page.evaluate(
+                    r"""
+                    () => {
+                      const out = {};
+                      const wanted = ['views', 'clicks', 'orders', 'revenue', 'spend', 'roas'];
+                      for (const span of document.querySelectorAll('span')) {
+                        const label = (span.innerText || '').trim().toLowerCase();
+                        if (!wanted.includes(label) || out[label]) continue;
+                        // Try immediate next sibling first (most common Etsy layout)
+                        const sib = span.nextElementSibling;
+                        if (sib && /text-heading/.test(sib.className || '')) {
+                          const v = (sib.innerText || '').trim();
+                          if (v) { out[label] = v; continue; }
+                        }
+                        // Walk up to 4 parents looking for any text-heading element
+                        let cur = span.parentElement;
+                        for (let i = 0; i < 4 && cur; i++) {
+                          const valEl = cur.querySelector('p[class*="text-heading"], [class*="wt-text-heading"]');
+                          if (valEl) {
+                            const v = (valEl.innerText || '').trim();
+                            if (v) { out[label] = v; break; }
+                          }
+                          cur = cur.parentElement;
+                        }
+                      }
+                      return out;
+                    }
+                    """
+                )
                 last_30d = {
-                    "spend": await _read_metric("ads_30d_spend_text"),
-                    "clicks": await _read_metric("ads_30d_clicks_text"),
-                    "impressions": await _read_metric("ads_30d_impressions_text"),
-                    "orders": await _read_metric("ads_30d_orders_text"),
-                    "revenue": await _read_metric("ads_30d_revenue_text"),
+                    "spend": stats.get("spend"),
+                    "clicks": stats.get("clicks"),
+                    "impressions": stats.get("views"),  # Etsy renamed; preserve old key
+                    "orders": stats.get("orders"),
+                    "revenue": stats.get("revenue"),
+                    "roas": stats.get("roas"),
                 }
 
                 return {
