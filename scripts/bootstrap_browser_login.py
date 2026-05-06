@@ -43,8 +43,40 @@ async def _wait_for_login(page) -> bool:
 
 async def main() -> int:
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=False)
-        context = await browser.new_context()
+        # Use the user's installed Chrome (channel='chrome') with automation
+        # tells stripped — Etsy's bot detector flags Playwright's bundled
+        # Chromium otherwise.
+        launch_kwargs = {
+            "headless": False,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ],
+        }
+        try:
+            browser = await pw.chromium.launch(channel="chrome", **launch_kwargs)
+        except Exception as exc:
+            print(
+                f"Could not launch system Chrome ({exc}). Falling back to "
+                "Playwright's bundled Chromium — bot detection more likely.",
+                flush=True,
+            )
+            browser = await pw.chromium.launch(**launch_kwargs)
+
+        context = await browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+            timezone_id="America/New_York",
+        )
+        # Strip the navigator.webdriver flag that Playwright sets by default
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+        )
         page = await context.new_page()
 
         print(f"Opening {ETSY_SIGNIN_URL} ...")

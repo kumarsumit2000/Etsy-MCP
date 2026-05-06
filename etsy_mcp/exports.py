@@ -148,10 +148,9 @@ def register_export_tools(
 
         params: dict[str, Any] = {}
         if since is not None:
-            from datetime import datetime, timezone
-            try:
-                dt = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-            except ValueError:
+            from .timeutil import parse_local_date
+            dt = parse_local_date(since)
+            if dt is None:
                 return {
                     "error": f"Invalid since='{since}'. Use ISO date format YYYY-MM-DD.",
                     "code": "validation_failed",

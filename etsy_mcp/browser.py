@@ -157,10 +157,36 @@ class EtsyBrowser:
             raise FileNotFoundError(str(storage_path))
 
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=not _is_headful())
+        # Stealth args + system Chrome (when available) to dodge Etsy's
+        # bot detection. Falls back to bundled Chromium if Chrome isn't
+        # installed.
+        launch_kwargs = {
+            "headless": not _is_headful(),
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ],
+        }
+        try:
+            self._browser = await self._pw.chromium.launch(
+                channel="chrome", **launch_kwargs
+            )
+        except Exception:
+            self._browser = await self._pw.chromium.launch(**launch_kwargs)
         self._context = await self._browser.new_context(
             storage_state=str(storage_path),
             viewport=DEFAULT_VIEWPORT,
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+            timezone_id=os.environ.get("ETSY_SHOP_TIMEZONE", "").strip() or "America/Denver",
+        )
+        # Strip navigator.webdriver flag
+        await self._context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
         )
         self._context.set_default_navigation_timeout(NAV_TIMEOUT_MS)
         self._context.set_default_timeout(ACTION_TIMEOUT_MS)
@@ -223,6 +249,22 @@ def register_browser_tools(
                 await page.goto(ETSY_ADS_URL)
                 if not await _ensure_logged_in(page):
                     return _session_expired_error()
+
+                # Etsy blocks the Ads page when the shop is on holiday mode
+                # or otherwise inactive. Detect that first — there are no
+                # on/off controls to find in that state.
+                inactive_banner = page.get_by_text(
+                    "Your shop needs to be active to start Etsy Ads",
+                    exact=False,
+                )
+                if await inactive_banner.count() > 0:
+                    return {
+                        "enabled": False,
+                        "daily_budget_usd": None,
+                        "last_30d": None,
+                        "shop_state": "inactive_or_holiday",
+                        "note": "Etsy Ads is unavailable while the shop is on holiday mode or inactive. Reactivate the shop to enable ads.",
+                    }
 
                 # Detect on/off via the presence of the "Turn on Etsy Ads" button
                 turn_on = page.locator(SELECTORS["ads_turn_on_button_role"])

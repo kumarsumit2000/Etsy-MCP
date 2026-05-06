@@ -6,7 +6,6 @@ receipts in a date range and aggregate locally.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -14,13 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .errors import EtsyMCPError, missing_shop_id_error
 from .http import paginate_all
-
-
-def _parse_iso(s: str) -> datetime | None:
-    try:
-        return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
+from .timeutil import epoch_to_local, parse_local_date
 
 
 def _grandtotal_cents(receipt: dict[str, Any]) -> int:
@@ -31,7 +24,7 @@ def _grandtotal_cents(receipt: dict[str, Any]) -> int:
 
 
 def _period_key(ts: int, group_by: str) -> str:
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    dt = epoch_to_local(ts)
     if group_by == "day":
         return dt.strftime("%Y-%m-%d")
     if group_by == "week":
@@ -74,8 +67,8 @@ def register_reporting_tools(
                 "code": "validation_failed",
             }
 
-        start_dt = _parse_iso(start)
-        end_dt = _parse_iso(end)
+        start_dt = parse_local_date(start)
+        end_dt = parse_local_date(end)
         if start_dt is None or end_dt is None:
             return {
                 "error": "start and end must be ISO date strings (YYYY-MM-DD).",
@@ -150,8 +143,8 @@ def register_reporting_tools(
                 "code": "validation_failed",
             }
 
-        start_dt = _parse_iso(start)
-        end_dt = _parse_iso(end)
+        start_dt = parse_local_date(start)
+        end_dt = parse_local_date(end)
         if start_dt is None or end_dt is None:
             return {
                 "error": "start and end must be ISO date strings (YYYY-MM-DD).",
