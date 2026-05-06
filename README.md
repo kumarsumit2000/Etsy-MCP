@@ -2,7 +2,7 @@
 
 **Connect Claude to your Etsy shop and run everything from a chat.** Listings, orders, ads, exports, refunds, sales, reports — all of it, in plain English, from inside Claude.
 
-This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **55 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
+This is a Python [MCP](https://modelcontextprotocol.io) server that exposes **56 tools** to Claude. Most use Etsy's Open API v3; a few drive the seller dashboard via Playwright for things the API doesn't expose (Etsy Ads, sales/coupons, listing image reorder, buyer messages).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#development)
@@ -34,7 +34,7 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 
 ## Status
 
-**Feature complete** against the design spec. All 55 tools across 6 phases are implemented and tested live against an approved Etsy app:
+**Feature complete** against the design spec. All 56 tools across 6 phases are implemented and tested live against an approved Etsy app:
 
 | Phase | Scope | Tools | Tests |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Every tool returns structured JSON Claude can read back, chain into the next cal
 | 2 | Operational ops (ship, refund, shop config, bulk inventory) | 16 | 33 |
 | 3 | Power tools (templates, sales/coupons, reports) | 8 | 21 |
 | 4 | Buyer/seller conversations (browser-driven) | 2 | — |
-| **Total** | | **55** | **162** |
+| **Total** | | **56** | **162** |
 
 ---
 
@@ -123,7 +123,7 @@ strictly more reliable because cookies come from your real Chrome.
 
 ---
 
-## Tool reference (all 53)
+## Tool reference (all 56)
 
 ### Auth & meta (2)
 
@@ -252,6 +252,14 @@ CSVs use dot-joined keys for nested fields (e.g. `price.amount`, `price.currency
 |---|---|
 | `etsy_revenue_report(start, end, group_by="day"\|"week"\|"month")` | Bucket revenue from receipts (in shop's local timezone — see `ETSY_SHOP_TIMEZONE`) |
 | `etsy_top_listings_report(start, end, by="revenue"\|"units", limit=20)` | Top listings (by="views" unsupported — Etsy v3 doesn't expose) |
+
+### Traffic & shop stats — browser (1)
+
+| Tool | What it does |
+|---|---|
+| `etsy_get_traffic_stats(date_range="Last 30 days")` | Scrape visits, conversion rate, abandoned-carts, item favorites, shop follows, repeat buyers, cities reached from `/your/shops/me/stats`. The Etsy v3 API does **not** expose any of these — they only exist on the seller dashboard. |
+
+Accepts any label the date dropdown shows: `"Today"`, `"Yesterday"`, `"Last 7 days"`, `"Last 30 days"`, `"This month"`, `"Last month"`, `"This year"`. Returns headline (visits, orders, conversion_rate_pct, revenue_usd) plus shopper_stats (item_favorites, shop_follows, reviews, repeat_buyers, cities_reached, abandoned_carts).
 
 ### Conversations — browser (2)
 

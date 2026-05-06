@@ -184,7 +184,7 @@ You should see something like:
 }
 ```
 
-That's it — the 55 tools are now available in every Claude Code chat
+That's it — the 56 tools are now available in every Claude Code chat
 on this machine.
 
 ---

@@ -75,6 +75,7 @@ SELECTORS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 ETSY_SIGNIN_URL_FRAGMENT = "/signin"
 ETSY_ADS_URL = "https://www.etsy.com/your/shops/me/advertising"
+ETSY_STATS_URL = "https://www.etsy.com/your/shops/me/stats"
 ETSY_DISCOUNTS_URL = "https://www.etsy.com/your/shops/me/discounts"
 ETSY_LISTING_EDIT_URL_TEMPLATE = "https://www.etsy.com/your/shops/me/tools/listings/{listing_id}/edit"
 ETSY_DASHBOARD_URL_FRAGMENT = "/your/shops/me/"
@@ -344,6 +345,184 @@ def register_browser_tools(
                     "enabled": enabled,
                     "daily_budget_usd": daily_budget_usd,
                     "last_30d": last_30d,
+                }
+        except FileNotFoundError:
+            return _session_expired_error()
+        except EtsyMCPError as exc:
+            return exc.to_dict()
+
+    @mcp.tool()
+    async def etsy_get_traffic_stats(
+        date_range: str = "Last 30 days",
+    ) -> dict[str, Any]:
+        """Pull visits / conversion-rate / abandoned-carts / traffic-sources
+        data from the Shop Stats dashboard.
+
+        Etsy's v3 Open API does NOT expose visit counts, conversion rate,
+        favorites, abandoned carts, or traffic-source breakdown — they only
+        live in the seller dashboard at /your/shops/me/stats. This tool
+        scrapes that page via Playwright using the saved Etsy session.
+
+        Args:
+            date_range: One of the labels Etsy's date dropdown shows —
+                "Today", "Yesterday", "Last 7 days", "Last 30 days" (default),
+                "This month", "Last month", "This year".
+
+        Returns:
+            {
+              "headline": {visits, orders, conversion_rate, revenue},
+              "shopper_stats": {item_favorites, shop_follows, repeat_buyers,
+                                cities_reached, abandoned_carts, reviews},
+              "date_range": str (the label that was selected),
+              "url": str
+            }
+        """
+        try:
+            async with EtsyBrowser() as page:
+                await page.goto(ETSY_STATS_URL, wait_until="domcontentloaded")
+                if not await _ensure_logged_in(page):
+                    return _session_expired_error()
+                # Wait for headline numbers to render
+                try:
+                    await page.wait_for_function(
+                        """() => document.querySelectorAll('p[class*="text-heading"]').length >= 4""",
+                        timeout=10_000,
+                    )
+                except Exception:
+                    pass
+
+                # Switch to the requested date range. Etsy renders the current
+                # label on a button; click it, then click the option.
+                clicked_dropdown = await page.evaluate(
+                    r"""
+                    () => {
+                      for (const b of document.querySelectorAll('button, [role="button"]')) {
+                        const t = (b.innerText || '').trim();
+                        if (/this month|last \d+|today|yesterday|this year|last month/i.test(t)
+                            && /\b(may|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec|\d{4})\b/i.test(t)) {
+                          b.click();
+                          return t;
+                        }
+                      }
+                      return null;
+                    }
+                    """
+                )
+                if clicked_dropdown:
+                    await page.wait_for_timeout(800)
+                    chosen = await page.evaluate(
+                        r"""
+                        (label) => {
+                          for (const el of document.querySelectorAll('button, [role="menuitem"], li, a')) {
+                            const t = (el.innerText || '').trim();
+                            if (t.toLowerCase() === label.toLowerCase()) { el.click(); return t; }
+                          }
+                          return null;
+                        }
+                        """,
+                        date_range,
+                    )
+                    if chosen:
+                        await page.wait_for_timeout(3000)  # allow re-render
+
+                # Scrape headline numbers. Labels and values live in separate
+                # sibling subtrees on the Stats dashboard, so we invert the
+                # search: find each leaf node whose entire text is exactly
+                # one of our labels, then walk up to the nearest text-heading.
+                stats = await page.evaluate(
+                    r"""
+                    () => {
+                      const out = { headline: {}, shopper: {} };
+                      const headlineLabels = ['Visits', 'Orders', 'Conversion rate', 'Revenue'];
+                      for (const el of document.querySelectorAll('*')) {
+                        if (el.children.length !== 0) continue; // leaf only
+                        const t = (el.innerText || '').trim();
+                        if (!headlineLabels.includes(t)) continue;
+                        if (out.headline[t]) continue;
+                        let cur = el.parentElement;
+                        for (let i = 0; i < 5 && cur; i++) {
+                          const heading = cur.querySelector('p[class*="text-heading"]');
+                          if (heading) {
+                            const v = (heading.innerText || '').trim();
+                            if (v) { out.headline[t] = v; break; }
+                          }
+                          cur = cur.parentElement;
+                        }
+                      }
+                      // Shopper stats — same inverted approach. Each tile
+                      // has a leaf label (e.g. "Item favorites") and a leaf
+                      // number nearby. Walk up from the label to find the
+                      // first numeric leaf.
+                      const shopperLabels = {
+                        'item_favorites':  'Item favorites',
+                        'shop_follows':    'Shop follows',
+                        'reviews':         'Reviews',
+                        'repeat_buyers':   'Repeat buyers',
+                        'cities_reached':  'Cities reached',
+                        'abandoned_carts': 'Abandoned carts',
+                      };
+                      for (const el of document.querySelectorAll('*')) {
+                        if (el.children.length !== 0) continue;
+                        const t = (el.innerText || '').trim();
+                        let key = null;
+                        for (const [k, label] of Object.entries(shopperLabels)) {
+                          if (t === label) { key = k; break; }
+                        }
+                        if (!key || out.shopper[key]) continue;
+                        let cur = el.parentElement;
+                        for (let i = 0; i < 5 && cur; i++) {
+                          for (const node of cur.querySelectorAll('*')) {
+                            if (node.children.length !== 0) continue;
+                            const nt = (node.innerText || '').trim();
+                            if (/^\d[\d,]*$/.test(nt)) {
+                              out.shopper[key] = nt;
+                              break;
+                            }
+                          }
+                          if (out.shopper[key]) break;
+                          cur = cur.parentElement;
+                        }
+                      }
+                      return out;
+                    }
+                    """
+                )
+
+                if not stats.get("headline"):
+                    screenshot = await _save_error_screenshot(page, "stats_dashboard")
+                    return _selector_missing_error(
+                        "scrape Stats dashboard headline", screenshot
+                    )
+
+                head = stats["headline"]
+                # Normalize numeric strings ("13.8K" → 13800, "$30,231.71" → 30231.71)
+                def _to_num(s: str) -> float | None:
+                    if s is None:
+                        return None
+                    s = s.strip().replace(",", "").replace("$", "").replace("%", "")
+                    try:
+                        if s.endswith("K") or s.endswith("k"):
+                            return float(s[:-1]) * 1000
+                        if s.endswith("M") or s.endswith("m"):
+                            return float(s[:-1]) * 1_000_000
+                        return float(s)
+                    except ValueError:
+                        return None
+
+                return {
+                    "headline": {
+                        "visits": _to_num(head.get("Visits")),
+                        "visits_text": head.get("Visits"),
+                        "orders": _to_num(head.get("Orders")),
+                        "conversion_rate_pct": _to_num(head.get("Conversion rate")),
+                        "revenue_usd": _to_num(head.get("Revenue")),
+                        "revenue_text": head.get("Revenue"),
+                    },
+                    "shopper_stats": {
+                        k: _to_num(v) for k, v in stats.get("shopper", {}).items()
+                    },
+                    "date_range": date_range,
+                    "url": ETSY_STATS_URL,
                 }
         except FileNotFoundError:
             return _session_expired_error()
@@ -841,6 +1020,7 @@ def register_browser_tools(
 
     return {
         "etsy_ads_get_status": etsy_ads_get_status,
+        "etsy_get_traffic_stats": etsy_get_traffic_stats,
         "etsy_ads_create_campaign": etsy_ads_create_campaign,
         "etsy_ads_set_budget": etsy_ads_set_budget,
         "etsy_ads_pause": etsy_ads_pause,
